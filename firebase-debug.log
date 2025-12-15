@@ -1,0 +1,78 @@
+[debug] [2025-12-15T18:05:23.544Z] ----------------------------------------------------------------------
+[debug] [2025-12-15T18:05:23.547Z] Command:       /opt/homebrew/Cellar/node/25.1.0_2/bin/node /opt/homebrew/bin/firebase deploy --only firestore:rules
+[debug] [2025-12-15T18:05:23.547Z] CLI Version:   14.11.2
+[debug] [2025-12-15T18:05:23.547Z] Platform:      darwin
+[debug] [2025-12-15T18:05:23.547Z] Node Version:  v25.1.0
+[debug] [2025-12-15T18:05:23.547Z] Time:          Mon Dec 15 2025 23:05:23 GMT+0500 (Pakistan Standard Time)
+[debug] [2025-12-15T18:05:23.547Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-12-15T18:05:23.548Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[error] 
+[error] Error: Not in a Firebase app directory (could not locate firebase.json)
+[debug] [2025-12-15T18:05:29.960Z] ----------------------------------------------------------------------
+[debug] [2025-12-15T18:05:29.961Z] Command:       /opt/homebrew/Cellar/node/25.1.0_2/bin/node /opt/homebrew/bin/firebase init
+[debug] [2025-12-15T18:05:29.961Z] CLI Version:   14.11.2
+[debug] [2025-12-15T18:05:29.961Z] Platform:      darwin
+[debug] [2025-12-15T18:05:29.961Z] Node Version:  v25.1.0
+[debug] [2025-12-15T18:05:29.961Z] Time:          Mon Dec 15 2025 23:05:29 GMT+0500 (Pakistan Standard Time)
+[debug] [2025-12-15T18:05:29.961Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-12-15T18:05:29.962Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2025-12-15T18:05:29.976Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-15T18:05:29.977Z] > authorizing via signed-in user (abdullahsf99@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/abd11ah/Documents/App development Projects/ntboa
+
+[debug] [2025-12-15T18:05:30.686Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2025-12-15T18:05:30.686Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2025-12-15T18:05:44.362Z] ----------------------------------------------------------------------
+[debug] [2025-12-15T18:05:44.363Z] Command:       /opt/homebrew/Cellar/node/25.1.0_2/bin/node /opt/homebrew/bin/firebase deploy --only firestore:rules
+[debug] [2025-12-15T18:05:44.363Z] CLI Version:   14.11.2
+[debug] [2025-12-15T18:05:44.363Z] Platform:      darwin
+[debug] [2025-12-15T18:05:44.363Z] Node Version:  v25.1.0
+[debug] [2025-12-15T18:05:44.363Z] Time:          Mon Dec 15 2025 23:05:44 GMT+0500 (Pakistan Standard Time)
+[debug] [2025-12-15T18:05:44.363Z] ----------------------------------------------------------------------
+[debug] 
+[error] 
+[error] Error: Not in a Firebase app directory (could not locate firebase.json)
+[debug] [2025-12-15T18:14:25.956Z] ----------------------------------------------------------------------
+[debug] [2025-12-15T18:14:25.958Z] Command:       /opt/homebrew/Cellar/node/25.1.0_2/bin/node /opt/homebrew/bin/firebase init functions
+[debug] [2025-12-15T18:14:25.958Z] CLI Version:   14.11.2
+[debug] [2025-12-15T18:14:25.958Z] Platform:      darwin
+[debug] [2025-12-15T18:14:25.958Z] Node Version:  v25.1.0
+[debug] [2025-12-15T18:14:25.958Z] Time:          Mon Dec 15 2025 23:14:25 GMT+0500 (Pakistan Standard Time)
+[debug] [2025-12-15T18:14:25.958Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-12-15T18:14:25.960Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-12-15T18:14:25.960Z] > authorizing via signed-in user (abdullahsf99@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/abd11ah/Documents/App development Projects/ntboa
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-12-15T18:14:25.987Z] ExitPromptError: User force closed the prompt with 0 null
+    at /opt/homebrew/lib/node_modules/firebase-tools/node_modules/@inquirer/core/dist/commonjs/lib/create-prompt.js:96:20
+    at Emitter.emit (/opt/homebrew/lib/node_modules/firebase-tools/node_modules/signal-exit/dist/cjs/index.js:71:19)
+    at #processEmit (/opt/homebrew/lib/node_modules/firebase-tools/node_modules/signal-exit/dist/cjs/index.js:240:27)
+    at #process.emit (/opt/homebrew/lib/node_modules/firebase-tools/node_modules/signal-exit/dist/cjs/index.js:191:37)

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+pid.[0-9]*.log
+.[0-9]*.bt
+.npm/
+
+# Firebase emulators
+.firebase/
+emulators/
+*.sqlite
+
+# Other
+.DS_Store
+Thumbs.db

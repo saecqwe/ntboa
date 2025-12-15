@@ -1,7 +1,13 @@
 {
   "compilerOptions": {
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/admin/*": ["./src/features/admin/*"],
+      "@/evaluator/*": ["./src/features/evaluator/*"],
+      "@/referee/*": ["./src/features/referee/*"],
+      "@/authentication/*": ["./src/features/authentication/*"],
+      "@/ui/*": ["./src/ui/*"],
+      "@/services/*": ["./src/services/*"]
     }
   }
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { LuUserCog, LuUsers, LuShieldCheck } from 'react-icons/lu';
-import BackButton from '@/components/BackButton';
+import BackButton from '@/components/ui/BackButton';
 
 const roles = [
   {
