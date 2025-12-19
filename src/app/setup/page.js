@@ -58,7 +58,7 @@ const SetupPage = () => {
         // or actually create auth users if we wanted to be thorough, but let's just create docs.
         // Wait, 'users' collection usually maps to Auth UIDs. 
         // For dashboard to work, we need documents in 'users' with role 'referee'.
-        const newRefRef = doc(collection(db, 'users'));
+        const newRefRef = doc(collection(db, 'referees'));
         await setDoc(newRefRef, {
           uid: newRefRef.id,
           displayName: ref.name,

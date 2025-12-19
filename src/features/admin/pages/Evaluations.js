@@ -69,7 +69,7 @@ const EvaluationsPage = () => {
       const evaluationsData = await Promise.all(
         evaluationsSnapshot.docs.map(async (doc) => {
           const evaluation = doc.data();
-          const refereeDoc = await getDoc(doc(db, 'users', evaluation.refereeId));
+          const refereeDoc = await getDoc(doc(db, 'referees', evaluation.refereeId));
           const evaluatorDoc = await getDoc(doc(db, 'users', evaluation.evaluatorId));
           return {
             id: doc.id,

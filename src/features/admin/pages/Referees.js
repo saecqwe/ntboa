@@ -32,7 +32,7 @@ const RefereesPage = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), where('role', '==', 'referee'));
+    const q = query(collection(db, 'referees'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const refereesData = [];
       querySnapshot.forEach((doc) => {
@@ -82,36 +82,39 @@ const RefereesPage = () => {
     e.preventDefault();
     setActionLoading(true);
     try {
-      // 1. Create User via Cloud Function (to avoid Admin logout)
-      const result = await createUser(
+      // 1. Create User via Secondary App (to avoid Admin logout)
+      const userCredential = await createUser(
         formData.email,
-        formData.password,
-        formData.fullName,
-        'referee'
+        formData.password
       );
       
-      const uid = result.data.uid;
+      const uid = userCredential.user.uid;
 
       // 2. Update Firestore Document with specific dashboard fields
-      // The Cloud Function creates the basic doc, we enrich it here
-      await updateDoc(doc(db, 'users', uid), {
+      // Since we are not using the Cloud Function anymore, we MUST set the entire document here
+      await setDoc(doc(db, 'referees', uid), {
+        uid: uid,
+        displayName: formData.fullName,
+        email: formData.email,
+        role: 'referee',
         tier: 'Tier 100', // Default tier
         photoURL: '',
+        createdAt: serverTimestamp(),
+        // Initialize stats fields
         avgScore: 0,
         evaluations: 0,
         status: 'Active',
-        suggestedTier: 'Tier 100',
+        suggestedTier: '',
       });
       
       toast.success("Referee added successfully!");
       handleCloseAddModal();
     } catch (error) {
       console.error('Error creating new referee:', error);
-      // specific error code from Cloud Function for duplicate email
-      if (error.code === 'already-exists') {
-          toast.error("A user with this email address already exists.");
+      if (error.code === 'auth/email-already-in-use') {
+          toast.error("Email is already in use.");
       } else {
-          toast.error(`Failed to add referee: ${error.message}`);
+          toast.error("Failed to add referee: " + error.message);
       }
     } finally {
         setActionLoading(false);
@@ -157,7 +160,7 @@ const RefereesPage = () => {
     setActionLoading(true);
 
     try {
-      const refereeRef = doc(db, 'users', editingReferee.id);
+      const refereeRef = doc(db, 'referees', editingReferee.id);
       await updateDoc(refereeRef, {
         displayName: editFormData.fullName,
         tier: editFormData.tier,
@@ -176,7 +179,7 @@ const RefereesPage = () => {
     e.stopPropagation();
     if (window.confirm('Are you sure you want to delete this referee? This will remove their data from the dashboard.')) {
       try {
-        await deleteDoc(doc(db, 'users', id));
+        await deleteDoc(doc(db, 'referees', id));
         toast.success("Referee deleted from dashboard.");
         // Note: This does not delete the Auth user. That requires a Cloud Function or Admin SDK.
       } catch (error) {

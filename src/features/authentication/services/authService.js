@@ -1,7 +1,9 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
-import { auth, db, functions } from '@/services/firebase/config';
+import { auth, db, functions, firebaseConfig } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
+import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut as signOutSecondary } from 'firebase/auth';
 
 // Re-exporting for convenience, in case other services need them
 export { auth, db };
@@ -25,17 +27,35 @@ export const logout = () => {
 };
 
 /**
- * Securely creates a new user by calling a Cloud Function.
- * This function passes the user details to the 'createNewUser' callable function.
+ * Creates a new user using a secondary Firebase App instance.
+ * This ensures the main authenticated user (Admin) stays logged in.
+ * 
  * @param {string} email
  * @param {string} password
- * @param {string} displayName
- * @param {string} role
- * @returns {Promise<any>} The result from the callable function.
+ * @returns {Promise<UserCredential>}
  */
-export const createUser = (email, password, displayName, role) => {
-  const createNewUserCallable = httpsCallable(functions, 'createNewUser');
-  return createNewUserCallable({ email, password, displayName, role });
+export const createUser = async (email, password) => {
+  let secondaryApp;
+  try {
+    // Create a unique name for the secondary app to avoid conflicts
+    const appName = `secondaryApp-${Date.now()}`;
+    secondaryApp = initializeApp(firebaseConfig, appName);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    
+    // Sign out from the secondary app immediately to be clean
+    await signOutSecondary(secondaryAuth);
+    
+    return userCredential;
+  } catch (error) {
+    throw error;
+  } finally {
+    // Clean up the secondary app instance
+    if (secondaryApp) {
+      await deleteApp(secondaryApp);
+    }
+  }
 };
 
 /**
@@ -54,9 +74,17 @@ export const checkIfAdminExists = async () => {
  * @returns {Promise<object|null>} The user data object or null if not found.
  */
 export const getUserDocument = async (uid) => {
-    const docRef = doc(db, 'users', uid);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? docSnap.data() : null;
+    // Try 'users' collection first (Admins, Evaluators)
+    let docRef = doc(db, 'users', uid);
+    let docSnap = await getDoc(docRef);
+    if (docSnap.exists()) return docSnap.data();
+
+    // Try 'referees' collection
+    docRef = doc(db, 'referees', uid);
+    docSnap = await getDoc(docRef);
+    if (docSnap.exists()) return docSnap.data();
+
+    return null;
 }
 
 /**

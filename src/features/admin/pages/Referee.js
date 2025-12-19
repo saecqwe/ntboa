@@ -1,67 +1,124 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import AdminSidebar from '@/components/layout/AdminSidebar';
-import BackButton from '@/components/ui/BackButton';
+import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '@/services/firebase/config';
+import AdminSidebar from '@/features/admin/components/AdminSidebar';
+import BackButton from '@/ui/BackButton';
 import { HiMenu, HiArrowLeft } from 'react-icons/hi';
+import toast, { Toaster } from 'react-hot-toast';
 
 const RefereeDetailPage = () => {
   const router = useRouter();
   const params = useParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [referee, setReferee] = useState(null);
+  const [evaluations, setEvaluations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for referee
-  const referee = {
-    id: params.id,
-    name: 'Michael Johnson',
-    email: 'mjohnson@ntboa.org',
-    currentTier: 'Tier 150',
-    avgScore: '37.0',
-    totalEvaluations: 1,
-    evaluators: 1,
-  };
+  useEffect(() => {
+    const fetchRefereeData = async () => {
+      try {
+        if (!params.id) return;
+
+        // Fetch Referee Details
+        const refereeDocRef = doc(db, 'referees', params.id);
+        const refereeDocSnap = await getDoc(refereeDocRef);
+
+        if (refereeDocSnap.exists()) {
+          setReferee({ id: refereeDocSnap.id, ...refereeDocSnap.data() });
+        } else {
+          toast.error("Referee not found");
+          setLoading(false);
+          return;
+        }
+
+        // Fetch Evaluations for this Referee
+        const q = query(
+          collection(db, 'evaluations'),
+          where('refereeId', '==', params.id)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        const evals = [];
+        
+        // We need to fetch evaluator names for each evaluation
+        const evaluatorPromises = querySnapshot.docs.map(async (docSnapshot) => {
+           const evalData = docSnapshot.data();
+           let evaluatorName = 'Unknown';
+           if (evalData.evaluatorId) {
+             try {
+                const evaluatorDoc = await getDoc(doc(db, 'users', evalData.evaluatorId));
+                if (evaluatorDoc.exists()) {
+                    evaluatorName = evaluatorDoc.data().displayName || 'Unknown';
+                }
+             } catch (err) {
+                 console.error("Error fetching evaluator", err);
+             }
+           }
+
+           return {
+             id: docSnapshot.id,
+             ...evalData,
+             evaluatorName,
+             // Format date safely
+             date: evalData.createdAt?.seconds 
+                ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+                : 'N/A',
+             // Store raw timestamp for sorting
+             timestamp: evalData.createdAt?.seconds || 0
+           };
+        });
+
+        const resolvedEvals = await Promise.all(evaluatorPromises);
+        
+        // Client-side sort by date descending
+        resolvedEvals.sort((a, b) => b.timestamp - a.timestamp);
+
+        setEvaluations(resolvedEvals);
+        setLoading(false);
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        toast.error("Failed to load referee details.");
+        setLoading(false);
+      }
+    };
+
+    fetchRefereeData();
+  }, [params.id]);
+
 
   // Stats configuration
   const stats = [
     {
       id: 'tier',
       label: 'Current Tier',
-      value: referee.currentTier,
+      value: referee?.tier || 'N/A',
       type: 'badge',
     },
     {
       id: 'score',
       label: 'Average Score',
-      value: referee.avgScore,
+      value: referee?.avgScore || 0,
       suffix: '/40',
       type: 'number',
     },
     {
       id: 'evaluations',
       label: 'Total Evaluations',
-      value: referee.totalEvaluations,
+      value: evaluations.length,
       subtitle: 'completed',
       type: 'number',
     },
     {
       id: 'evaluators',
       label: 'Evaluators',
-      value: referee.evaluators,
+      // Count unique evaluators
+      value: new Set(evaluations.map(e => e.evaluatorId)).size,
       subtitle: 'assigned',
       type: 'number',
-    },
-  ];
-
-  // Mock evaluation data
-  const evaluations = [
-    {
-      id: 1,
-      date: 'Oct 27, 2025',
-      evaluatorName: 'John Smith',
-      totalScore: '37/40',
-      tierAssigned: 'Tier 150',
-      comment: 'Excellent command of the court',
     },
   ];
 
@@ -71,8 +128,25 @@ const RefereeDetailPage = () => {
     router.push(`/admin/evaluations/${evaluationId}`);
   };
 
+  if (loading) {
+      return (
+          <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center text-white">
+              <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+          </div>
+      );
+  }
+
+  if (!referee) {
+      return (
+          <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center text-white">
+              <p>Referee not found.</p>
+          </div>
+      );
+  }
+
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
+      <Toaster />
       {/* Sidebar */}
       <AdminSidebar
         isOpen={sidebarOpen}
@@ -93,7 +167,7 @@ const RefereeDetailPage = () => {
           </button>
 
           <h1 className='text-fluid-3xl font-semibold text-white heading'>
-            All Evaluations
+            Referee Profile
           </h1>
         </header>
 
@@ -103,7 +177,7 @@ const RefereeDetailPage = () => {
             {/* Referee Info Banner */}
             <div className='bg-accent  rounded-[20px] px-6 py-6 mb-6'>
               <h2 className='text-fluid-3xl font-bold text-white heading mb-1'>
-                {referee.name}
+                {referee.displayName}
               </h2>
               <p className='text-fluid-base text-white/80 text-body'>
                 {referee.email}
@@ -191,38 +265,44 @@ const RefereeDetailPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {evaluations.map((evaluation) => (
-                      <tr
-                        key={evaluation.id}
-                        className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
-                      >
-                        <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
-                          {evaluation.date}
-                        </td>
-                        <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
-                          {evaluation.evaluatorName}
-                        </td>
-                        <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap'>
-                          {evaluation.totalScore}
-                        </td>
-                        <td className='py-3 lg:py-4 px-2 lg:px-4'>
-                          <span className='inline-block px-4 py-1.5 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
-                            {evaluation.tierAssigned}
-                          </span>
-                        </td>
-                        <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body max-w-[200px] truncate'>
-                          {evaluation.comment}
-                        </td>
-                        <td className='py-3 lg:py-4 px-2 lg:px-4'>
-                          <button
-                            onClick={() => handleViewMore(evaluation.id)}
-                            className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer'
-                          >
-                            View More
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {evaluations.length > 0 ? (
+                        evaluations.map((evaluation) => (
+                        <tr
+                            key={evaluation.id}
+                            className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
+                        >
+                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
+                            {evaluation.date}
+                            </td>
+                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
+                            {evaluation.evaluatorName}
+                            </td>
+                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap'>
+                            {evaluation.totalScore}
+                            </td>
+                            <td className='py-3 lg:py-4 px-2 lg:px-4'>
+                            <span className='inline-block px-4 py-1.5 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
+                                {evaluation.tier || 'N/A'}
+                            </span>
+                            </td>
+                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body max-w-[200px] truncate'>
+                            {evaluation.comments?.general || 'No comments'}
+                            </td>
+                            <td className='py-3 lg:py-4 px-2 lg:px-4'>
+                            <button
+                                onClick={() => handleViewMore(evaluation.id)}
+                                className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer'
+                            >
+                                View More
+                            </button>
+                            </td>
+                        </tr>
+                        ))
+                    ) : (
+                        <tr>
+                            <td colSpan="6" className="text-center py-8 text-[#9ca3af]">No evaluations found for this referee.</td>
+                        </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

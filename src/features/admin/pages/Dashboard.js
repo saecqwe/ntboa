@@ -70,7 +70,7 @@ const AdminDashboardPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       // Fetch referees
-      const refereesQuery = query(collection(db, 'users'), where('role', '==', 'referee'));
+      const refereesQuery = query(collection(db, 'referees'));
       const refereesSnapshot = await getDocs(refereesQuery);
       const refereesCount = refereesSnapshot.size;
       const topReferees = refereesSnapshot.docs.slice(0, 3).map(doc => doc.data().displayName);
@@ -126,7 +126,7 @@ const AdminDashboardPage = () => {
       const recentEvaluationsData = await Promise.all(
         evaluationsSnapshot.docs.slice(0, 5).map(async (doc) => {
           const evaluation = doc.data();
-          const refereeDoc = await getDoc(doc(db, 'users', evaluation.refereeId));
+          const refereeDoc = await getDoc(doc(db, 'referees', evaluation.refereeId));
           const evaluatorDoc = await getDoc(doc(db, 'users', evaluation.evaluatorId));
           return {
             ...evaluation,
