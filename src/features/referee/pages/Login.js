@@ -1,6 +1,6 @@
 'use client';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
@@ -8,10 +8,16 @@ import { login, getUserDocument } from '@/features/authentication/services/authS
 
 const LoginPage = () => {
   const router = useRouter();
-  const { userData } = useAuth();
+  const { userData, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && userData?.role === 'referee') {
+      router.replace('/referee/home');
+    }
+  }, [userData, authLoading, router]);
 
   const fields = [
     {
@@ -41,7 +47,7 @@ const LoginPage = () => {
       if (userCredential.user) {
         const userData = await getUserDocument(userCredential.user.uid);
         if (userData?.role === 'referee') {
-          router.push('/referee/home');
+          router.replace('/referee/home');
         } else {
           alert('You are not authorized to access this page.');
           setIsLoading(false);
@@ -55,6 +61,14 @@ const LoginPage = () => {
       setIsLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className='min-h-screen bg-gradient-primary flex items-center justify-center'>
+        <div className='w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin'></div>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen bg-gradient-primary bg-grid-pattern flex flex-col relative'>

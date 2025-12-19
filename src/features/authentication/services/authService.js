@@ -1,5 +1,5 @@
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { doc, getDoc, setDoc, getDocs, collection, query, where, limit, updateDoc } from 'firebase/firestore';
 import { auth, db, functions, firebaseConfig } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
@@ -74,18 +74,37 @@ export const checkIfAdminExists = async () => {
  * @returns {Promise<object|null>} The user data object or null if not found.
  */
 export const getUserDocument = async (uid) => {
-    // Try 'users' collection first (Admins, Evaluators)
-    let docRef = doc(db, 'users', uid);
-    let docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data();
-
-    // Try 'referees' collection
-    docRef = doc(db, 'referees', uid);
-    docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data();
-
-    return null;
+    const docRef = doc(db, 'users', uid);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data() : null;
 }
+
+/**
+ * Updates the user's profile data in Firestore.
+ * @param {string} uid - The user's unique ID.
+ * @param {object} data - The data to update.
+ * @returns {Promise<void>}
+ */
+export const updateUserProfile = async (uid, data) => {
+  const docRef = doc(db, 'users', uid);
+  return updateDoc(docRef, data);
+};
+
+/**
+ * Changes the current user's password.
+ * Re-authenticates the user before updating the password.
+ * @param {string} currentPassword - The user's current password.
+ * @param {string} newPassword - The new password.
+ * @returns {Promise<void>}
+ */
+export const changeUserPassword = async (currentPassword, newPassword) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No user logged in");
+
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  return updatePassword(user, newPassword);
+};
 
 /**
  * Subscribes to the authentication state changes.

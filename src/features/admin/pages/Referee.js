@@ -23,7 +23,7 @@ const RefereeDetailPage = () => {
         if (!params.id) return;
 
         // Fetch Referee Details
-        const refereeDocRef = doc(db, 'referees', params.id);
+        const refereeDocRef = doc(db, 'users', params.id);
         const refereeDocSnap = await getDoc(refereeDocRef);
 
         if (refereeDocSnap.exists()) {

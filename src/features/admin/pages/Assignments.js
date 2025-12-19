@@ -1,44 +1,38 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiMenu, HiX } from 'react-icons/hi';
-import { FiUsers, FiUser } from 'react-icons/fi';
-
-const EVALUATORS = [
-  { id: 1, name: 'John Smith', email: 'jsmith@gmail.org', assignedReferees: 2 },
-  { id: 2, name: 'Emily Johnson', email: 'ejohnson@ntboa.org', assignedReferees: 2 },
-  { id: 3, name: 'Michael Davis', email: 'mdavis@ntboa.org', assignedReferees: 2 },
-];
-
-const REFEREES = [
-  { id: 1, name: 'Michael Johnson', email: 'mjohnson@ntboa.org', tier: 'Tier 150' },
-  { id: 2, name: 'Sarah Williams', email: 'swilliams@ntboa.org', tier: 'Tier 150' },
-  { id: 3, name: 'David Brown', email: 'dbrown@ntboa.org', tier: 'Tier 150' },
-  { id: 4, name: 'Jennifer Davis', email: 'jdavis@ntboa.org', tier: 'Tier 150' },
-  { id: 5, name: 'Robert Miller', email: 'rmiller@ntboa.org', tier: 'Tier 150' },
-];
-
-const CURRENT_ASSIGNMENTS = [
-  { id: 1, evaluator: 'John Smith', assignedReferees: '2 Referees', totalCompleted: 8 },
-  { id: 2, evaluator: 'Emily Johnson', assignedReferees: '2 Referees', totalCompleted: 5 },
-];
+import { HiMenu, HiX, HiPlus, HiFilter, HiChevronUp, HiChevronDown } from 'react-icons/hi';
+import { FiUsers, FiUser, FiCalendar, FiClock, FiMapPin } from 'react-icons/fi';
 
 const AssignmentsPage = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // Assignment Creation State
+  const [isCreating, setIsCreating] = useState(false);
   const [selectedEvaluator, setSelectedEvaluator] = useState(null);
   const [selectedReferees, setSelectedReferees] = useState([]);
   const [evaluatorSearch, setEvaluatorSearch] = useState('');
   const [refereeSearch, setRefereeSearch] = useState('');
   const [location, setLocation] = useState('');
-  const [dateTime, setDateTime] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+
+  // Data State
   const [evaluators, setEvaluators] = useState([]);
   const [referees, setReferees] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [locationsList, setLocationsList] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Filter State
+  const [filterDate, setFilterDate] = useState('');
+  const [filterReferee, setFilterReferee] = useState('');
+  const [filterEvaluator, setFilterEvaluator] = useState('');
+  const [filterLocation, setFilterLocation] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -57,11 +51,41 @@ const AssignmentsPage = () => {
       const assignmentsQuery = query(collection(db, 'assignments'));
       const assignmentsSnapshot = await getDocs(assignmentsQuery);
       setAssignments(assignmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+      // Fetch locations
+      const locationsQuery = query(collection(db, 'locations'));
+      const locationsSnapshot = await getDocs(locationsQuery);
+      setLocationsList(locationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => a.name.localeCompare(b.name)));
+
       setLoading(false);
     };
 
     fetchData();
   }, []);
+
+  const isSameDay = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    const date1 = d1.toDate ? d1.toDate() : new Date(d1);
+    const date2 = d2.toDate ? d2.toDate() : new Date(d2);
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  };
+
+  const assignedRefereeIdsForSelectedDateAndEvaluator = useMemo(() => {
+    if (!selectedEvaluator || !date) return new Set();
+    const ids = new Set();
+    assignments
+      .filter(a => a.evaluatorId === selectedEvaluator.id && isSameDay(a.scheduledDate, date))
+      .forEach(a => {
+        if (Array.isArray(a.refereeIds)) {
+          a.refereeIds.forEach(id => ids.add(id));
+        }
+      });
+    return ids;
+  }, [selectedEvaluator, assignments, date]);
 
   const filteredEvaluators = evaluators.filter((evaluator) =>
     evaluator.displayName.toLowerCase().includes(evaluatorSearch.toLowerCase())
@@ -83,23 +107,89 @@ const AssignmentsPage = () => {
     );
   };
 
-  const handleAssign = async () => {
-    if (!selectedEvaluator || selectedReferees.length === 0) return;
-    await addDoc(collection(db, 'assignments'), {
-      evaluatorId: selectedEvaluator.id,
-      refereeIds: selectedReferees,
-      location,
-      scheduledDate: new Date(dateTime),
-      status: 'pending',
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '-';
+    const dateObj = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    if (isNaN(dateObj.getTime())) return '-';
+    return dateObj.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
-    setSelectedReferees([]);
-    setLocation('');
-    setDateTime('');
+  };
+
+  const getRefereeNames = (ids) => {
+    if (!ids || !Array.isArray(ids)) return '-';
+    return ids.map(id => referees.find(r => r.id === id)?.displayName || 'Unknown').join(', ');
+  };
+
+  const handleAssign = async () => {
+    if (!selectedEvaluator || selectedReferees.length === 0 || !date || !time) return;
+    
+    try {
+      const scheduledDate = new Date(`${date}T${time}`);
+      
+      const newAssignment = {
+        evaluatorId: selectedEvaluator.id,
+        refereeIds: selectedReferees,
+        location,
+        scheduledDate,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, 'assignments'), newAssignment);
+
+      setAssignments(prev => [...prev, { id: docRef.id, ...newAssignment }]);
+      
+      setSelectedReferees([]);
+      setLocation('');
+      // Keep date/time to make next assignment easier? Or clear? 
+      // User said "first thing is date", so keeping date might be helpful, but let's clear for safety to avoid accidental double books if logic fails.
+      // Actually, UX-wise, if I'm assigning for a day, I might want to keep the date.
+      // Let's clear time but keep date? Or clear both. Let's clear both for now.
+      setTime('');
+      alert('Assignment created successfully!');
+    } catch (error) {
+      console.error("Error creating assignment:", error);
+      alert("Failed to create assignment.");
+    }
   };
 
   const handleRemoveAssignment = async (assignmentId) => {
-    await deleteDoc(doc(db, 'assignments', assignmentId));
+    if (!window.confirm('Are you sure you want to delete this assignment?')) return;
+    try {
+      await deleteDoc(doc(db, 'assignments', assignmentId));
+      setAssignments(prev => prev.filter(a => a.id !== assignmentId));
+    } catch (error) {
+      console.error("Error removing assignment:", error);
+    }
   };
+
+  // Group assignments by date for display
+  const groupedAssignments = useMemo(() => {
+    const groups = {};
+    displayedAssignments.forEach(assignment => {
+      const dateObj = assignment.scheduledDate?.toDate ? assignment.scheduledDate.toDate() : new Date(assignment.scheduledDate);
+      const dateKey = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      
+      if (!groups[dateKey]) {
+        groups[dateKey] = {
+            dateObj,
+            items: []
+        };
+      }
+      groups[dateKey].items.push(assignment);
+    });
+
+    // Sort groups by date
+    return Object.entries(groups)
+      .sort(([, a], [, b]) => b.dateObj - a.dateObj) // Newest dates first
+      .map(([key, value]) => ({ date: key, items: value.items }));
+  }, [displayedAssignments]);
 
   return (
     <div className='min-h-screen bg-gradient-primary flex overflow-x-hidden'>
@@ -107,7 +197,7 @@ const AssignmentsPage = () => {
 
       <div className='flex-1 lg:ml-64 min-w-0 overflow-x-hidden'>
         {/* Header */}
-        <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 lg:px-8 py-4 lg:py-6 flex items-center gap-4'>
+        <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 lg:px-8 py-4 lg:py-6 flex items-center gap-4 sticky top-0 z-20'>
           <BackButton variant='solid' className='shrink-0' />
           <button
             onClick={() => setIsSidebarOpen(true)}
@@ -116,258 +206,348 @@ const AssignmentsPage = () => {
             <HiMenu className='w-6 h-6' />
           </button>
 
-          <h1 className='text-fluid-2xl md:text-fluid-3xl font-semibold text-white heading min-w-0 truncate'>
-            Assign Referees to Evaluators
+          <h1 className='text-fluid-2xl md:text-fluid-3xl font-semibold text-white heading min-w-0 truncate flex-1'>
+            Assignments
           </h1>
+
+          <button 
+            onClick={() => setIsCreating(!isCreating)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${isCreating ? 'bg-white/10 text-white' : 'bg-accent text-white hover:opacity-90'}`}
+          >
+            {isCreating ? <HiChevronUp className="w-5 h-5" /> : <HiPlus className="w-5 h-5" />}
+            <span className="hidden sm:inline">{isCreating ? 'Hide Form' : 'New Assignment'}</span>
+          </button>
         </header>
 
         {/* Content */}
         <div className='p-4 sm:p-6 lg:p-8 min-w-0'>
-          <div className='max-w-7xl mx-auto space-y-4 lg:space-y-6 w-full'>
-            {/* Top Banner */}
-            <div className='bg-accent rounded-[16px] sm:rounded-[20px] p-4 sm:p-6 lg:p-8'>
-              <h2 className='md:text-fluid-2xl font-bold text-white mb-2'>
-                Assign Referees to Evaluators
-              </h2>
-              <p className='text-fluid-base text-white/90'>
-                Select an evaluator and assign referees they can evaluate
-              </p>
-            </div>
+          <div className='max-w-7xl mx-auto space-y-6 w-full'>
+            
+            {/* Create Assignment Section (Collapsible) */}
+            {isCreating && (
+              <div className='bg-[#1f1f1f] border border-[#3a3a3a] rounded-[20px] p-4 sm:p-6 lg:p-8 space-y-6 animate-in fade-in slide-in-from-top-4 duration-200'>
+                <div className='flex items-center justify-between'>
+                  <h2 className='text-fluid-xl font-bold text-white'>Create New Assignment</h2>
+                </div>
 
-            {/* Selection Grid */}
-            <div className='grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 w-full'>
-              {/* Select Evaluator */}
-              <div className='rounded-[16px] sm:rounded-[20px] overflow-hidden border border-[#3a3a3a] flex flex-col min-w-0 w-full'>
-                {/* Header with Orange Gradient */}
-                <div className='bg-accent p-4 sm:p-6'>
-                  <div className='flex items-center gap-2 mb-3 sm:mb-4'>
-                    <FiUsers className='w-4 h-4 sm:w-5 sm:h-5 text-white' />
-                    <h3 className='text-fluid-xl font-semibold text-white'>
-                      Select Evaluator
-                    </h3>
-                  </div>
-
-                  {/* Search Input */}
-                  <div className='relative'>
+                {/* Step 1: Date & Time & Location */}
+                <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+                  <div className='space-y-2'>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'>
+                      <FiCalendar /> Date
+                    </label>
                     <input
-                      type='text'
-                      placeholder='Search'
-                      value={evaluatorSearch}
-                      onChange={(e) => setEvaluatorSearch(e.target.value)}
-                      className='w-full bg-white/30 text-white placeholder-white/70 rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-fluid-base focus:outline-none focus:ring-2 focus:ring-white/50 border-0 transition-all'
+                      type='date'
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#f97316] outline-none border border-[#3a3a3a] scheme-dark'
                     />
+                  </div>
+                  <div className='space-y-2'>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'>
+                      <FiClock /> Time
+                    </label>
+                    <input
+                      type='time'
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#f97316] outline-none border border-[#3a3a3a] scheme-dark'
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'>
+                      <FiMapPin /> Location
+                    </label>
+                    <select
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-[#f97316] outline-none border border-[#3a3a3a] appearance-none'
+                    >
+                      <option value="">Select Location</option>
+                      {locationsList.map(loc => (
+                        <option key={loc.id} value={loc.name}>{loc.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* Evaluators List */}
-                <div className='bg-[#1f1f1f] p-0 h-[200px] sm:h-[240px] lg:h-[280px] overflow-y-auto flex-1'>
-                  {loading ? <p className='text-white p-4'>Loading...</p> : filteredEvaluators.map((evaluator) => (
-                    <div
-                      key={evaluator.id}
-                      onClick={() => handleEvaluatorSelect(evaluator)}
-                      className={`p-3 sm:p-4 cursor-pointer transition-all relative ${
-                        selectedEvaluator?.id === evaluator.id
-                          ? 'bg-[#2a2a2a] border-l-2 sm:border-l-4 border-white'
-                          : 'bg-[#1f1f1f] hover:bg-[#2a2a2a]'
-                      }`}
-                    >
-                      <div className='flex items-start justify-between gap-2 sm:gap-4'>
-                        <div className='flex-1 min-w-0'>
-                          <div className='text-fluid-base font-medium text-white mb-1 truncate'>
-                            {evaluator.displayName}
-                          </div>
-                          <div className='text-fluid-sm text-[#9ca3af] truncate'>
-                            {evaluator.email}
-                          </div>
-                        </div>
-                        <div className='text-right shrink-0'>
-                          <div className='text-fluid-sm text-[#9ca3af] mb-1 whitespace-nowrap'>
-                            Assigned Referees
-                          </div>
-                          <div className='text-fluid-lg font-bold text-white'>
-                            {evaluator.assignedReferees}
-                          </div>
-                        </div>
+                {/* Step 2: Selection Grid */}
+                <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+                  {/* Select Evaluator */}
+                  <div className='rounded-xl overflow-hidden border border-[#3a3a3a] flex flex-col h-[300px]'>
+                    <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
+                      <div className='flex items-center justify-between mb-3'>
+                        <h3 className='font-semibold text-white flex items-center gap-2'>
+                          <FiUsers className='text-[#f97316]' /> Select Evaluator
+                        </h3>
+                        <span className='text-xs text-[#9ca3af]'>
+                           {selectedEvaluator ? '1 Selected' : 'None Selected'}
+                        </span>
                       </div>
+                      <input
+                        type='text'
+                        placeholder='Search evaluators...'
+                        value={evaluatorSearch}
+                        onChange={(e) => setEvaluatorSearch(e.target.value)}
+                        className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-[#f97316]'
+                      />
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Select Referee */}
-              <div className='rounded-[16px] sm:rounded-[20px] overflow-hidden border border-[#3a3a3a] flex flex-col min-w-0 w-full'>
-                {/* Header with Orange Gradient */}
-                <div className='bg-accent p-4 sm:p-6'>
-                  <div className='flex items-center gap-2 mb-3 sm:mb-4'>
-                    <FiUser className='w-4 h-4 sm:w-5 sm:h-5 text-white' />
-                    <h3 className='text-fluid-xl font-semibold text-white'>
-                      Select Referee
-                    </h3>
+                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
+                      {filteredEvaluators.map((evaluator) => (
+                        <div
+                          key={evaluator.id}
+                          onClick={() => handleEvaluatorSelect(evaluator)}
+                          className={`p-3 rounded-lg cursor-pointer mb-1 flex justify-between items-center transition-all ${
+                            selectedEvaluator?.id === evaluator.id
+                              ? 'bg-[#f97316]/20 border border-[#f97316]/50'
+                              : 'hover:bg-[#2a2a2a] border border-transparent'
+                          }`}
+                        >
+                          <div>
+                            <div className='text-white font-medium'>{evaluator.displayName}</div>
+                            <div className='text-xs text-[#9ca3af]'>{evaluator.email}</div>
+                          </div>
+                          {selectedEvaluator?.id === evaluator.id && (
+                            <div className='w-2 h-2 rounded-full bg-[#f97316]' />
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Search Input */}
-                  <div className='relative'>
-                    <input
-                      type='text'
-                      placeholder='Search'
-                      value={refereeSearch}
-                      onChange={(e) => setRefereeSearch(e.target.value)}
-                      className='w-full bg-white/30 text-white placeholder-white/70 rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-fluid-base focus:outline-none focus:ring-2 focus:ring-white/50 border-0 transition-all'
-                    />
-                  </div>
-                </div>
-
-                {/* Referees List */}
-                <div className='bg-[#1f1f1f] p-0 h-[200px] sm:h-[240px] lg:h-[280px] overflow-y-auto flex-1'>
-                  {loading ? <p className='text-white p-4'>Loading...</p> : filteredReferees.map((referee) => (
-                    <div
-                      key={referee.id}
-                      onClick={() => handleRefereeToggle(referee.id)}
-                      className='p-3 sm:p-4 cursor-pointer transition-all bg-[#1f1f1f] hover:bg-[#2a2a2a]'
-                    >
-                      <div className='flex items-center gap-2 sm:gap-3 md:gap-4'>
-                        {/* Checkbox */}
-                        <div className='shrink-0'>
+                  {/* Select Referee */}
+                  <div className='rounded-xl overflow-hidden border border-[#3a3a3a] flex flex-col h-[300px]'>
+                    <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
+                      <div className='flex items-center justify-between mb-3'>
+                        <h3 className='font-semibold text-white flex items-center gap-2'>
+                          <FiUser className='text-[#f97316]' /> Select Referees
+                        </h3>
+                         <span className='text-xs text-[#9ca3af]'>
+                           {selectedReferees.length} Selected
+                        </span>
+                      </div>
+                      <input
+                        type='text'
+                        placeholder='Search referees...'
+                        value={refereeSearch}
+                        onChange={(e) => setRefereeSearch(e.target.value)}
+                        className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-[#f97316]'
+                      />
+                    </div>
+                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
+                      {filteredReferees.map((referee) => {
+                        const isAlreadyAssigned = assignedRefereeIdsForSelectedDateAndEvaluator.has(referee.id);
+                        return (
                           <div
-                            className={`w-4 h-4 sm:w-5 sm:h-5 rounded border-2 flex items-center justify-center transition-all ${
+                            key={referee.id}
+                            onClick={() => handleRefereeToggle(referee.id)}
+                            className={`p-3 rounded-lg cursor-pointer mb-1 flex justify-between items-center transition-all ${
                               selectedReferees.includes(referee.id)
-                                ? 'bg-[#f97316] border-[#f97316]'
-                                : 'bg-transparent border-[#6b7280]'
+                                ? 'bg-[#f97316] text-white'
+                                : 'hover:bg-[#2a2a2a] text-white'
                             }`}
                           >
+                            <div className='flex-1 min-w-0'>
+                              <div className='font-medium flex items-center gap-2'>
+                                {referee.displayName}
+                                {isAlreadyAssigned && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${selectedReferees.includes(referee.id) ? 'bg-white/20 border-white/40' : 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30'}`}>
+                                    Assigned (This Date)
+                                  </span>
+                                )}
+                              </div>
+                              <div className={`text-xs truncate ${selectedReferees.includes(referee.id) ? 'text-white/80' : 'text-[#9ca3af]'}`}>
+                                {referee.tier} • {referee.email}
+                              </div>
+                            </div>
                             {selectedReferees.includes(referee.id) && (
-                              <svg
-                                className='w-2.5 h-2.5 sm:w-3 sm:h-3 text-white'
-                                fill='none'
-                                strokeLinecap='round'
-                                strokeLinejoin='round'
-                                strokeWidth='2'
-                                viewBox='0 0 24 24'
-                                stroke='currentColor'
-                              >
-                                <path d='M5 13l4 4L19 7'></path>
-                              </svg>
+                              <HiPlus className='w-4 h-4 rotate-45' />
                             )}
                           </div>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
 
-                        {/* Info */}
-                        <div className='flex-1 min-w-0'>
-                          <div className='text-fluid-base font-medium text-white mb-1 truncate'>
-                            {referee.displayName}
-                          </div>
-                          <div className='text-fluid-sm text-[#9ca3af] truncate'>
-                            {referee.email}
-                          </div>
-                        </div>
+                <div className='flex justify-end pt-4 border-t border-[#3a3a3a]'>
+                  <button
+                    onClick={handleAssign}
+                    disabled={!selectedEvaluator || selectedReferees.length === 0 || !date || !time}
+                    className='bg-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-8 py-3 font-semibold text-white transition-all shadow-lg flex items-center gap-2'
+                  >
+                    Confirm Assignment
+                  </button>
+                </div>
+              </div>
+            )}
 
-                        {/* Tier Badge */}
-                        <div className='shrink-0'>
-                          <span className='inline-block px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-fluid-sm font-medium bg-[#6b7280] text-white whitespace-nowrap'>
-                            {referee.tier}
-                          </span>
-                        </div>
+            {/* Assignments List */}
+            <div className='bg-[#1f1f1f] rounded-[20px] p-4 sm:p-6 lg:p-8 min-w-0 border border-[#3a3a3a]'>
+              <div className='flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6'>
+                <h2 className='text-fluid-xl font-semibold text-white shrink-0'>
+                  Scheduled Assignments
+                </h2>
+                
+                {/* Filters */}
+                <div className='flex flex-wrap items-center gap-2'>
+                    {/* Location Filter */}
+                    <div className='flex items-center gap-2 bg-[#2a2a2a] p-1 rounded-lg border border-[#3a3a3a] flex-1 min-w-[200px]'>
+                        <span className='pl-3 text-sm text-[#9ca3af] flex items-center gap-2'>
+                            <FiMapPin />
+                        </span>
+                        <select 
+                            value={filterLocation} 
+                            onChange={(e) => setFilterLocation(e.target.value)}
+                            className="bg-transparent text-white text-sm px-2 py-1.5 outline-none w-full appearance-none cursor-pointer"
+                        >
+                            <option value="" className="bg-[#2a2a2a]">All Locations</option>
+                            {locationsList.map(loc => (
+                                <option key={loc.id} value={loc.name} className="bg-[#2a2a2a]">{loc.name}</option>
+                            ))}
+                        </select>
+                         {filterLocation && (
+                            <button onClick={() => setFilterLocation('')} className="p-1 hover:bg-white/10 rounded text-[#9ca3af] hover:text-white">
+                                <HiX />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Evaluator Filter */}
+                    <div className='flex items-center gap-2 bg-[#2a2a2a] p-1 rounded-lg border border-[#3a3a3a] flex-1 min-w-[150px]'>
+                        <span className='pl-3 text-sm text-[#9ca3af] flex items-center gap-2'>
+                            <FiUsers />
+                        </span>
+                        <input 
+                            type="text" 
+                            placeholder="Filter Evaluator"
+                            value={filterEvaluator} 
+                            onChange={(e) => setFilterEvaluator(e.target.value)}
+                            className="bg-transparent text-white text-sm px-2 py-1.5 outline-none w-full"
+                        />
+                         {filterEvaluator && (
+                            <button onClick={() => setFilterEvaluator('')} className="p-1 hover:bg-white/10 rounded text-[#9ca3af] hover:text-white">
+                                <HiX />
+                            </button>
+                        )}
+                    </div>
+
+                     {/* Referee Filter */}
+                    <div className='flex items-center gap-2 bg-[#2a2a2a] p-1 rounded-lg border border-[#3a3a3a] flex-1 min-w-[150px]'>
+                        <span className='pl-3 text-sm text-[#9ca3af] flex items-center gap-2'>
+                            <FiUser />
+                        </span>
+                        <input 
+                            type="text" 
+                            placeholder="Filter Referee"
+                            value={filterReferee} 
+                            onChange={(e) => setFilterReferee(e.target.value)}
+                            className="bg-transparent text-white text-sm px-2 py-1.5 outline-none w-full"
+                        />
+                         {filterReferee && (
+                            <button onClick={() => setFilterReferee('')} className="p-1 hover:bg-white/10 rounded text-[#9ca3af] hover:text-white">
+                                <HiX />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Date Filter */}
+                    <div className='flex items-center gap-2 bg-[#2a2a2a] p-1 rounded-lg border border-[#3a3a3a] shrink-0'>
+                        <span className='pl-3 text-sm text-[#9ca3af] flex items-center gap-2'>
+                            <FiCalendar />
+                        </span>
+                        <input 
+                            type="date" 
+                            value={filterDate} 
+                            onChange={(e) => setFilterDate(e.target.value)}
+                            className="bg-transparent text-white text-sm px-2 py-1.5 outline-none scheme-dark"
+                        />
+                        {filterDate && (
+                            <button onClick={() => setFilterDate('')} className="p-1 hover:bg-white/10 rounded text-[#9ca3af] hover:text-white">
+                            <HiX />
+                            </button>
+                        )}
+                    </div>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className='text-white text-center p-8'>Loading assignments...</div>
+              ) : groupedAssignments.length === 0 ? (
+                <div className='text-[#9ca3af] text-center p-8'>No assignments found matching your filters.</div>
+              ) : (
+                <div className='space-y-8'>
+                  {groupedAssignments.map(({ date, items }) => (
+                    <div key={date} className='space-y-4'>
+                      <div className='flex items-center gap-4'>
+                        <h3 className='text-lg font-bold text-[#f97316] uppercase tracking-wide border-b border-[#f97316]/30 pb-1'>
+                          {date}
+                        </h3>
+                        <span className='text-sm text-[#9ca3af] bg-[#2a2a2a] px-2 py-0.5 rounded-full'>{items.length} Games</span>
+                      </div>
+                      
+                      <div className='overflow-x-auto -mx-4 sm:-mx-6 lg:mx-0 rounded-xl border border-[#3a3a3a]'>
+                        <table className='w-full'>
+                          <thead className='bg-[#2a2a2a]'>
+                            <tr>
+                              <th className='text-left py-3 px-6 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider w-[150px]'>Time</th>
+                              <th className='text-left py-3 px-6 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider'>Evaluator</th>
+                              <th className='text-left py-3 px-6 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider'>Referees</th>
+                              <th className='text-left py-3 px-6 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider'>Location</th>
+                              <th className='text-right py-3 px-6 text-xs font-semibold text-[#9ca3af] uppercase tracking-wider w-[80px]'>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className='divide-y divide-[#2a2a2a] bg-[#1a1a1a]'>
+                            {items.map((assignment) => (
+                              <tr key={assignment.id} className='hover:bg-[#2a2a2a]/50 transition-colors'>
+                                <td className='py-4 px-6 text-sm text-white whitespace-nowrap font-medium'>
+                                  {formatDate(assignment.scheduledDate).split(', ').pop()} {/* Show only Time/Year part? Actually format is Month Day, Year, Time. Let's just extract time if possible or use full string. logic: formatDate returns full string. */}
+                                  {(() => {
+                                      const d = assignment.scheduledDate?.toDate ? assignment.scheduledDate.toDate() : new Date(assignment.scheduledDate);
+                                      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                  })()}
+                                </td>
+                                <td className='py-4 px-6 text-sm text-white'>
+                                  <div className='flex items-center gap-2'>
+                                     <div className='w-6 h-6 rounded-full bg-[#333] flex items-center justify-center text-xs text-[#f97316] font-bold'>
+                                        {evaluators.find(e => e.id === assignment.evaluatorId)?.displayName?.charAt(0) || '?'}
+                                     </div>
+                                     {evaluators.find(e => e.id === assignment.evaluatorId)?.displayName}
+                                  </div>
+                                </td>
+                                <td className='py-4 px-6 text-sm text-white'>
+                                  <div className='flex flex-wrap gap-1'>
+                                    {assignment.refereeIds && assignment.refereeIds.map(rid => {
+                                        const rName = referees.find(r => r.id === rid)?.displayName || 'Unknown';
+                                        return (
+                                            <span key={rid} className='bg-[#2a2a2a] text-white/90 px-2 py-0.5 rounded text-xs border border-[#3a3a3a]'>
+                                                {rName}
+                                            </span>
+                                        )
+                                    })}
+                                  </div>
+                                </td>
+                                <td className='py-4 px-6 text-sm text-white'>
+                                  {assignment.location || '-'}
+                                </td>
+                                <td className='py-4 px-6 text-right'>
+                                  <button
+                                    onClick={() => handleRemoveAssignment(assignment.id)}
+                                    className='text-[#ef4444] hover:bg-[#ef4444]/10 p-2 rounded-lg transition-colors'
+                                    title="Delete Assignment"
+                                  >
+                                    <HiX className='w-4 h-4' />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            {/* Bottom Inputs */}
-            <div className='flex flex-col sm:flex-row gap-3 sm:gap-4 w-full'>
-              <input
-                type='text'
-                placeholder='Enter Location'
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className='flex-1 min-w-0 bg-[#4a4a4a] text-white placeholder-[#9ca3af] rounded-lg sm:rounded-xl px-3 sm:px-4 py-3 sm:py-3.5 text-fluid-base focus:outline-none focus:ring-2 focus:ring-[#f97316] border-0 transition-all w-full'
-              />
-              <div className='relative flex-1 min-w-0 w-full'>
-                <input
-                  type='datetime-local'
-                  placeholder='Select Date / Time'
-                  value={dateTime}
-                  onChange={(e) => setDateTime(e.target.value)}
-                  className='w-full bg-[#4a4a4a] text-white placeholder-[#9ca3af] rounded-lg sm:rounded-xl px-3 sm:px-4 py-3 sm:py-3.5 text-fluid-base focus:outline-none focus:ring-2 focus:ring-[#f97316] border-0 transition-all scheme-dark'
-                />
-              </div>
-              <button
-                onClick={handleAssign}
-                disabled={!selectedEvaluator || selectedReferees.length === 0}
-                className='bg-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg sm:rounded-xl px-4 sm:px-6 lg:px-8 py-3 sm:py-3.5 text-fluid-base font-semibold text-white transition-all active:scale-[0.98] shadow-lg w-full sm:w-auto shrink-0'
-              >
-                <span className='hidden md:inline'>
-                  Assign {selectedReferees.length} Referees to Evaluator
-                </span>
-                <span className='hidden sm:inline md:hidden'>
-                  Assign {selectedReferees.length} Referee
-                  {selectedReferees.length !== 1 ? 's' : ''}
-                </span>
-                <span className='sm:hidden'>
-                  Assign ({selectedReferees.length})
-                </span>
-              </button>
-            </div>
-
-            {/* Current Assignments Table */}
-            <div className='bg-[#1f1f1f] rounded-[16px] sm:rounded-[20px] p-4 sm:p-6 lg:p-8 w-full min-w-0'>
-              <h2 className='text-fluid-xl font-semibold text-white mb-4 sm:mb-6'>
-                Current Assignments
-              </h2>
-
-              <div className='overflow-x-auto -mx-4 sm:-mx-6 lg:mx-0 w-full'>
-                <div className='inline-block min-w-full align-middle'>
-                  <div className='overflow-hidden'>
-                    <table className='w-full'>
-                      <thead className='bg-[#3a3a3a]'>
-                        <tr>
-                          <th className='text-left py-3 sm:py-4 px-3 sm:px-4 lg:px-6 text-fluid-sm font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                            EVALUATOR
-                          </th>
-                          <th className='text-left py-3 sm:py-4 px-3 sm:px-4 lg:px-6 text-fluid-sm font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                            ASSIGNED REFEREES
-                          </th>
-                          <th className='text-left py-3 sm:py-4 px-3 sm:px-4 lg:px-6 text-fluid-sm font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                            TOTAL COMPLETED
-                          </th>
-                          <th className='text-left py-3 sm:py-4 px-3 sm:px-4 lg:px-6 text-fluid-sm font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                            ACTIONS
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className='bg-[#1f1f1f]'>
-                        {loading ? <tr><td colSpan='4' className='text-white text-center p-4'>Loading...</td></tr> : assignments.map((assignment) => (
-                          <tr
-                            key={assignment.id}
-                            className='border-b border-[#2a2a2a] last:border-0'
-                          >
-                            <td className='py-3 sm:py-4 lg:py-5 px-3 sm:px-4 lg:px-6 text-fluid-base text-white whitespace-nowrap'>
-                              {evaluators.find(e => e.id === assignment.evaluatorId)?.displayName}
-                            </td>
-                            <td className='py-3 sm:py-4 lg:py-5 px-3 sm:px-4 lg:px-6 text-fluid-base text-white whitespace-nowrap'>
-                              {assignment.refereeIds.length} Referees
-                            </td>
-                            <td className='py-3 sm:py-4 lg:py-5 px-3 sm:px-4 lg:px-6 text-fluid-base text-white whitespace-nowrap'>
-                              {assignment.totalCompleted || 0}
-                            </td>
-                            <td className='py-3 sm:py-4 lg:py-5 px-3 sm:px-4 lg:px-6'>
-                              <button
-                                onClick={() =>
-                                  handleRemoveAssignment(assignment.id)
-                                }
-                                className='text-[#ef4444] hover:text-[#dc2626] transition-colors'
-                              >
-                                <HiX className='w-4 h-4 sm:w-5 sm:h-5' />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

@@ -32,7 +32,7 @@ const RefereesPage = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'referees'));
+    const q = query(collection(db, 'users'), where('role', '==', 'referee'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const refereesData = [];
       querySnapshot.forEach((doc) => {
@@ -92,7 +92,7 @@ const RefereesPage = () => {
 
       // 2. Update Firestore Document with specific dashboard fields
       // Since we are not using the Cloud Function anymore, we MUST set the entire document here
-      await setDoc(doc(db, 'referees', uid), {
+      await setDoc(doc(db, 'users', uid), {
         uid: uid,
         displayName: formData.fullName,
         email: formData.email,
@@ -160,7 +160,7 @@ const RefereesPage = () => {
     setActionLoading(true);
 
     try {
-      const refereeRef = doc(db, 'referees', editingReferee.id);
+      const refereeRef = doc(db, 'users', editingReferee.id);
       await updateDoc(refereeRef, {
         displayName: editFormData.fullName,
         tier: editFormData.tier,
@@ -179,7 +179,7 @@ const RefereesPage = () => {
     e.stopPropagation();
     if (window.confirm('Are you sure you want to delete this referee? This will remove their data from the dashboard.')) {
       try {
-        await deleteDoc(doc(db, 'referees', id));
+        await deleteDoc(doc(db, 'users', id));
         toast.success("Referee deleted from dashboard.");
         // Note: This does not delete the Auth user. That requires a Cloud Function or Admin SDK.
       } catch (error) {

@@ -14,6 +14,7 @@ import {
   HiOutlineCog,
   HiOutlineLogout,
   HiX,
+  HiOutlineLocationMarker,
 } from 'react-icons/hi';
 
 const NAV_ITEMS = [
@@ -29,6 +30,11 @@ const NAV_ITEMS = [
     name: 'Assignments',
     icon: HiOutlineDocumentDuplicate,
     href: '/admin/assignments',
+  },
+  {
+    name: 'Locations',
+    icon: HiOutlineLocationMarker,
+    href: '/admin/locations',
   },
   {
     name: 'Upload Roster',

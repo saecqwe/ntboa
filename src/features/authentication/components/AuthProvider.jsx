@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useEffect, useState } from 'react';
+import { createContext, useEffect, useState, useCallback } from 'react';
 import { onAuthObserver, getUserDocument, login, logout, createUser, checkIfAdminExists } from '@/authentication/services/authService';
 
 export const AuthContext = createContext();
@@ -9,6 +9,13 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshUserData = useCallback(async () => {
+    if (user) {
+      const data = await getUserDocument(user.uid);
+      setUserData(data);
+    }
+  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthObserver(async (user) => {
@@ -28,8 +35,8 @@ export const AuthProvider = ({ children }) => {
 
   // The value provided to the context will no longer contain the direct service functions.
   // Components should import and use the service functions directly.
-  // We only provide state (user, userData, loading).
-  const value = { user, userData, loading };
+  // We only provide state (user, userData, loading) and a refresh method.
+  const value = { user, userData, loading, refreshUserData };
 
   return (
     <AuthContext.Provider value={value}>

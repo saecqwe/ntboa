@@ -1,10 +1,15 @@
 'use client';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { PiGlobeSimpleThin } from 'react-icons/pi';
+import { useRouter } from 'next/navigation';
+import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import { FaUser, FaCamera } from 'react-icons/fa';
-import BackButton from '@/components/ui/BackButton';
+import BackButton from '@/ui/BackButton';
+import { useAuth } from '../../authentication/hooks/useAuth';
+import { updateUserProfile, changeUserPassword, logout } from '../../authentication/services/authService';
 
 const RefereeProfilePage = () => {
+  const router = useRouter();
+  const { user, userData, refreshUserData, loading } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -22,26 +27,42 @@ const RefereeProfilePage = () => {
   const [message, setMessage] = useState('');
   const fileInputRef = useRef(null);
 
-  // Load profile data from localStorage on component mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem('refereeProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setFormData(profile);
-      if (profile.photo) {
-        setPhotoPreview(profile.photo);
-      }
-    } else {
-      // Set default data if no profile exists
+    if (!loading && !user) {
+      router.replace('/referee/login');
+    }
+  }, [user, loading, router]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace('/referee/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setMessage('Logout failed. Please try again.');
+    }
+  };
+
+  // Load profile data from userData
+  useEffect(() => {
+    if (userData) {
       setFormData({
-        name: 'Michael',
-        email: 'michael@ntboa.com',
-        phone: '+92 123 234 234',
-        tier: 'Tier 150',
-        initials: 'MC',
+        name: userData.name || '',
+        email: userData.email || user?.email || '',
+        phone: userData.phone || '',
+        tier: userData.ranking || userData.tier || '', // Handle both naming conventions
+        initials: userData.name
+          ? userData.name
+              .trim()
+              .split(' ')
+              .filter((n) => n.length > 0)
+              .map((name) => name.charAt(0).toUpperCase())
+              .join('')
+              .slice(0, 2)
+          : 'U',
       });
     }
-  }, []);
+  }, [userData, user]);
 
   const handleInputChange = useCallback((field, value) => {
     setFormData((prev) => {
@@ -69,7 +90,9 @@ const RefereeProfilePage = () => {
   }, []);
 
   const handlePhotoClick = useCallback(() => {
-    fileInputRef.current?.click();
+    // fileInputRef.current?.click();
+    // Disabled as per request
+    setMessage('Profile picture update is currently disabled.');
   }, []);
 
   const handlePhotoChange = useCallback((e) => {
@@ -98,26 +121,25 @@ const RefereeProfilePage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) return;
+    
     setIsLoading(true);
     setMessage('');
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await updateUserProfile(user.uid, {
+        name: formData.name,
+        phone: formData.phone,
+      });
 
-      // Save to localStorage
-      const profileData = {
-        ...formData,
-        photo: photoPreview,
-      };
+      await refreshUserData();
 
-      localStorage.setItem('refereeProfile', JSON.stringify(profileData));
-
-      // Trigger custom event for header to update
+      // Trigger custom event for header to update if needed (though context should handle it)
       window.dispatchEvent(new Event('profileUpdated'));
 
       setMessage('Profile updated successfully!');
     } catch (error) {
+      console.error(error);
       setMessage('Failed to update profile. Please try again.');
     } finally {
       setIsLoading(false);
@@ -141,13 +163,17 @@ const RefereeProfilePage = () => {
     setMessage('');
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await changeUserPassword(password.current, password.new);
 
       setMessage('Password changed successfully!');
       setPassword({ current: '', new: '', confirm: '' });
     } catch (error) {
-      setMessage('Failed to change password. Please try again.');
+      console.error(error);
+      if (error.code === 'auth/wrong-password') {
+         setMessage('Current password is incorrect.');
+      } else {
+         setMessage('Failed to change password. ' + error.message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +193,7 @@ const RefereeProfilePage = () => {
       type: 'email',
       value: formData.email,
       required: true,
+      disabled: true, // Email change usually requires re-auth and verification
     },
     {
       id: 'phone',
@@ -177,10 +204,11 @@ const RefereeProfilePage = () => {
     },
     {
       id: 'tier',
-      label: 'Current Tier',
+      label: 'Ranking / Tier',
       type: 'text',
       value: formData.tier,
       required: false,
+      disabled: true,
     },
   ];
 
@@ -205,6 +233,14 @@ const RefereeProfilePage = () => {
     },
   ];
 
+  if (loading || !user) {
+    return (
+      <div className='min-h-screen bg-[#0e0e0e] flex items-center justify-center'>
+        <div className='w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin'></div>
+      </div>
+    );
+  }
+
   return (
     <div className='min-h-screen flex flex-col bg-[#0e0e0e] text-white'>
       {/* Header */}
@@ -223,9 +259,13 @@ const RefereeProfilePage = () => {
               NTBOA
             </p>
           </div>
-          <div className='w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/15 flex items-center justify-center text-xs sm:text-sm font-semibold heading text-white'>
-            {formData.initials}
-          </div>
+          <button
+            onClick={handleLogout}
+            className='flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-full transition-all text-sm font-medium text-white border border-white/10'
+          >
+            <PiSignOut className='w-4 h-4' />
+            <span>Sign Out</span>
+          </button>
         </div>
         <div className='text-center sm:text-left'>
           <h1 className='text-2xl sm:text-3xl lg:text-4xl font-bold heading text-white mb-2'>
@@ -261,7 +301,7 @@ const RefereeProfilePage = () => {
             </h2>
 
             <form onSubmit={handleSubmit} className='space-y-6'>
-              {/* Profile Photo Section */}
+              {/* Profile Photo Section - Visual only for now */}
               <div className='flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6'>
                 <div className='flex flex-col items-center sm:items-start'>
                   <div className='relative'>
@@ -278,6 +318,8 @@ const RefereeProfilePage = () => {
                         </div>
                       )}
                     </div>
+                    {/* Disabled photo button */}
+                    {/*
                     <button
                       type='button'
                       onClick={handlePhotoClick}
@@ -286,9 +328,11 @@ const RefereeProfilePage = () => {
                     >
                       <FaCamera className='w-4 h-4' />
                     </button>
+                    */}
                   </div>
                 </div>
                 <div className='text-center sm:text-left'>
+                  {/*
                   <button
                     type='button'
                     onClick={handlePhotoClick}
@@ -296,8 +340,9 @@ const RefereeProfilePage = () => {
                   >
                     {photoPreview ? 'Change Photo' : 'Add Profile Photo'}
                   </button>
+                  */}
                   <p className='text-xs text-white/60 mt-2'>
-                    JPG, PNG or GIF (max. 5MB)
+                    Profile photo updates are currently disabled.
                   </p>
                 </div>
                 <input
@@ -319,7 +364,7 @@ const RefereeProfilePage = () => {
                       className='block text-sm font-semibold text-white/90 mb-2'
                     >
                       {field.label}
-                      {field.required && (
+                      {field.required && !field.disabled && (
                         <span className='text-red-400 ml-1'>*</span>
                       )}
                     </label>
@@ -331,7 +376,8 @@ const RefereeProfilePage = () => {
                         handleInputChange(field.id, e.target.value)
                       }
                       required={field.required}
-                      className='w-full p-3 bg-[#2b2b2b] border border-[#3b3b3b] rounded-lg text-white placeholder-white/50 focus:border-[#c41414] focus:ring-1 focus:ring-[#c41414] focus:outline-none transition-colors'
+                      disabled={field.disabled}
+                      className={`w-full p-3 bg-[#2b2b2b] border border-[#3b3b3b] rounded-lg text-white placeholder-white/50 focus:border-[#c41414] focus:ring-1 focus:ring-[#c41414] focus:outline-none transition-colors ${field.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                   </div>
                 ))}

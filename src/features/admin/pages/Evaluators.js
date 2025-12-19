@@ -2,91 +2,72 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/services/firebase/config';
+import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronDown, HiCheck } from 'react-icons/hi';
+import toast, { Toaster } from 'react-hot-toast';
 
 const EvaluatorsPage = () => {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedTier, setSelectedTier] = useState('All Tiers');
-  const [showTierDropdown, setShowTierDropdown] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  
+  // Data State
+  const [evaluators, setEvaluators] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Form State
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     password: '',
   });
-  const dropdownRef = useRef(null);
+  
+  const [editFormData, setEditFormData] = useState({
+    id: '',
+    fullName: '',
+  });
+  const [editingEvaluator, setEditingEvaluator] = useState(null);
 
-  // Tier options
-  const tierOptions = [
-    'All Tiers',
-    'Tier 100',
-    'Tier 150',
-    'Tier 200',
-    'Tier 250',
-  ];
-
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowTierDropdown(false);
-      }
-    };
+    // Fetch evaluators from 'users' collection where role is 'evaluator'
+    const q = query(collection(db, 'users'), where('role', '==', 'evaluator'));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const evaluatorsData = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        evaluatorsData.push({
+          id: doc.id,
+          ...data,
+          // Format date if it exists
+          joinedDate: data.createdAt?.seconds 
+            ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : 'N/A'
+        });
+      });
+      setEvaluators(evaluatorsData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching evaluators:", error);
+      toast.error("Failed to load evaluators.");
+      setLoading(false);
+    });
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => unsubscribe();
   }, []);
 
-  const handleTierSelect = (tier) => {
-    setSelectedTier(tier);
-    setShowTierDropdown(false);
-  };
-
-  // Mock data for evaluators
-  const evaluators = [
-    {
-      id: 1,
-      name: 'Michael Johnson',
-      email: 'jsmith@ntboa.org',
-      evaluations: 12,
-      joinedDate: 'Jan 14, 2024',
-      tier: 'Tier 150',
-    },
-    {
-      id: 2,
-      name: 'Sarah Williams',
-      email: 'ejohnson@ntboa.org',
-      evaluations: 9,
-      joinedDate: 'Mar 21, 2024',
-      tier: 'Tier 100',
-    },
-    {
-      id: 3,
-      name: 'David Brown',
-      email: 'mdavis@ntboa.org',
-      evaluations: 15,
-      joinedDate: 'Nov 9, 2023',
-      tier: 'Tier 200',
-    },
-  ];
-
-  // Filter evaluators based on tier
-  const filteredEvaluators = evaluators.filter((evaluator) => {
-    if (selectedTier === 'All Tiers') return true;
-    return evaluator.tier === selectedTier;
-  });
-
   const handleAddEvaluator = () => {
-    setShowModal(true);
+    setShowAddModal(true);
   };
 
-  const handleCloseModal = () => {
-    setShowModal(false);
+  const handleCloseAddModal = () => {
+    setShowAddModal(false);
     setFormData({
       fullName: '',
       email: '',
@@ -102,25 +83,103 @@ const EvaluatorsPage = () => {
     }));
   };
 
-  const handleSubmitEvaluator = (e) => {
+  const handleSubmitEvaluator = async (e) => {
     e.preventDefault();
-    console.log('Add new evaluator:', formData);
-    // Add your API call here
-    handleCloseModal();
+    setActionLoading(true);
+
+    try {
+      // 1. Create Auth User (using secondary app to avoid admin logout)
+      const userCredential = await createUser(formData.email, formData.password);
+      const uid = userCredential.user.uid;
+
+      // 2. Create Firestore Document
+      await setDoc(doc(db, 'users', uid), {
+        uid: uid,
+        displayName: formData.fullName,
+        email: formData.email,
+        role: 'evaluator',
+        createdAt: serverTimestamp(),
+        evaluationsMade: 0, // Initialize stats
+        photoURL: '',
+      });
+
+      toast.success("Evaluator added successfully!");
+      handleCloseAddModal();
+    } catch (error) {
+      console.error('Error creating evaluator:', error);
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error("Email is already in use.");
+      } else {
+        toast.error("Failed to add evaluator: " + error.message);
+      }
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleEditEvaluator = (id, e) => {
+  const handleEditEvaluator = (evaluator, e) => {
     e.stopPropagation();
-    console.log('Edit evaluator:', id);
+    setEditingEvaluator(evaluator);
+    setEditFormData({
+      id: evaluator.id,
+      fullName: evaluator.displayName || '',
+    });
+    setShowEditModal(true);
   };
 
-  const handleDeleteEvaluator = (id, e) => {
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setEditingEvaluator(null);
+    setEditFormData({
+      id: '',
+      fullName: '',
+    });
+  };
+
+  const handleEditInputChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleUpdateEvaluator = async (e) => {
+    e.preventDefault();
+    if (!editingEvaluator) return;
+    setActionLoading(true);
+
+    try {
+      const evaluatorRef = doc(db, 'users', editingEvaluator.id);
+      await updateDoc(evaluatorRef, {
+        displayName: editFormData.fullName,
+      });
+      toast.success("Evaluator updated successfully!");
+      handleCloseEditModal();
+    } catch (error) {
+      console.error('Error updating evaluator:', error);
+      toast.error("Failed to update evaluator.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteEvaluator = async (id, e) => {
     e.stopPropagation();
-    console.log('Delete evaluator:', id);
+    if (window.confirm('Are you sure you want to delete this evaluator? This will remove their data from the dashboard.')) {
+      try {
+        await deleteDoc(doc(db, 'users', id));
+        toast.success("Evaluator deleted from dashboard.");
+      } catch (error) {
+        console.error('Error deleting evaluator:', error);
+        toast.error("Failed to delete evaluator.");
+      }
+    }
   };
 
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
+      <Toaster />
       {/* Sidebar */}
       <AdminSidebar
         isOpen={sidebarOpen}
@@ -148,47 +207,8 @@ const EvaluatorsPage = () => {
         {/* Content */}
         <div className='p-4 lg:p-8'>
           <div className='max-w-7xl mx-auto'>
-            {/* Top Bar - Tier Filter and Add Button */}
-            <div className='flex flex-col sm:flex-row gap-4 mb-6'>
-              {/* Custom Tier Filter Dropdown */}
-              <div className='relative flex-1 max-w-xs' ref={dropdownRef}>
-                {/* Dropdown Button */}
-                <button
-                  onClick={() => setShowTierDropdown(!showTierDropdown)}
-                  className='w-full bg-[#2a2a2a] text-white rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] hover:border-[#4a4a4a] flex items-center justify-between'
-                >
-                  <span>{selectedTier}</span>
-                  <HiChevronDown
-                    className={`w-5 h-5 text-white transition-transform duration-300 ${
-                      showTierDropdown ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-
-                {/* Dropdown Menu */}
-                {showTierDropdown && (
-                  <div className='absolute top-full left-0 right-0 mt-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg shadow-xl overflow-hidden z-50 animate-fadeIn'>
-                    {tierOptions.map((tier) => (
-                      <button
-                        key={tier}
-                        onClick={() => handleTierSelect(tier)}
-                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${
-                          selectedTier === tier
-                            ? 'bg-accent/20 text-white border-l-4 border-accent'
-                            : 'text-white hover:bg-[#3a3a3a]'
-                        }`}
-                      >
-                        <span>{tier}</span>
-                        {selectedTier === tier && (
-                          <HiCheck className='w-5 h-5 text-accent' />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Add Evaluator Button */}
+            {/* Top Bar - Add Button */}
+            <div className='flex justify-end mb-6'>
               <button
                 onClick={handleAddEvaluator}
                 className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base whitespace-nowrap'
@@ -222,45 +242,63 @@ const EvaluatorsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredEvaluators.map((evaluator) => (
-                      <tr
-                        key={evaluator.id}
-                        className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
-                      >
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {evaluator.name}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {evaluator.email}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body text-center whitespace-nowrap'>
-                          {evaluator.evaluations}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {evaluator.joinedDate}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6'>
-                          <div className='flex items-center gap-3'>
-                            <button
-                              onClick={(e) => handleEditEvaluator(evaluator.id, e)}
-                              className='hover:opacity-80 transition-opacity'
-                              title='Edit'
-                            >
-                              <HiPencil className='w-5 h-5 lg:w-6 lg:h-6 text-[#22c55e]' />
-                            </button>
-                            <button
-                              onClick={(e) =>
-                                handleDeleteEvaluator(evaluator.id, e)
-                              }
-                              className='hover:opacity-80 transition-opacity'
-                              title='Delete'
-                            >
-                              <HiTrash className='w-5 h-5 lg:w-6 lg:h-6 text-[#ef4444]' />
-                            </button>
-                          </div>
+                    {loading ? (
+                      <tr>
+                        <td colSpan='5' className='text-center py-12'>
+                          <p className='text-[15px] text-[#6b7280] text-body'>
+                            Loading evaluators...
+                          </p>
                         </td>
                       </tr>
-                    ))}
+                    ) : evaluators.length > 0 ? (
+                      evaluators.map((evaluator) => (
+                        <tr
+                          key={evaluator.id}
+                          className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
+                        >
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {evaluator.displayName}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {evaluator.email}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body text-center whitespace-nowrap'>
+                            {evaluator.evaluationsMade || 0}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {evaluator.joinedDate}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6'>
+                            <div className='flex items-center gap-3'>
+                              <button
+                                onClick={(e) => handleEditEvaluator(evaluator, e)}
+                                className='hover:opacity-80 transition-opacity'
+                                title='Edit'
+                              >
+                                <HiPencil className='w-5 h-5 lg:w-6 lg:h-6 text-[#22c55e]' />
+                              </button>
+                              <button
+                                onClick={(e) =>
+                                  handleDeleteEvaluator(evaluator.id, e)
+                                }
+                                className='hover:opacity-80 transition-opacity'
+                                title='Delete'
+                              >
+                                <HiTrash className='w-5 h-5 lg:w-6 lg:h-6 text-[#ef4444]' />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan='5' className='text-center py-12'>
+                          <p className='text-[15px] text-[#6b7280] text-body'>
+                            No evaluators found.
+                          </p>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -268,31 +306,21 @@ const EvaluatorsPage = () => {
               {/* Footer */}
               <div className='px-4 lg:px-6 py-4 border-t border-[#3a3a3a]'>
                 <p className='text-fluid-base text-white text-body text-center'>
-                  Showing {filteredEvaluators.length} of {evaluators.length}{' '}
-                  evaluators
+                  Showing {evaluators.length} evaluators
                 </p>
               </div>
-
-              {/* No Results Message */}
-              {filteredEvaluators.length === 0 && (
-                <div className='text-center py-12'>
-                  <p className='text-[15px] text-[#6b7280] text-body'>
-                    No evaluators found matching your filter.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </main>
 
       {/* Add Evaluator Modal */}
-      {showModal && (
+      {showAddModal && (
         <div className='fixed inset-0 z-50 flex items-center justify-center p-4'>
           {/* Overlay */}
           <div
             className='absolute inset-0 bg-black/70'
-            onClick={handleCloseModal}
+            onClick={handleCloseAddModal}
           ></div>
 
           {/* Modal */}
@@ -303,7 +331,7 @@ const EvaluatorsPage = () => {
                 Add New Evaluator
               </h2>
               <button
-                onClick={handleCloseModal}
+                onClick={handleCloseAddModal}
                 className='text-white hover:opacity-80 transition-opacity'
               >
                 <HiX className='w-6 h-6' />
@@ -364,16 +392,83 @@ const EvaluatorsPage = () => {
               <div className='flex gap-3'>
                 <button
                   type='button'
-                  onClick={handleCloseModal}
+                  onClick={handleCloseAddModal}
+                  disabled={actionLoading}
                   className='flex-1 bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-base text-body border border-[#4a4a4a]'
                 >
                   Cancel
                 </button>
                 <button
                   type='submit'
-                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base'
+                  disabled={actionLoading}
+                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base flex justify-center items-center'
                 >
-                  Add Evaluator
+                  {actionLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Add Evaluator'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Evaluator Modal */}
+      {showEditModal && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center p-4'>
+          {/* Overlay */}
+          <div
+            className='absolute inset-0 bg-black/70'
+            onClick={handleCloseEditModal}
+          ></div>
+
+          {/* Modal */}
+          <div className='relative bg-[#2a2a2a] rounded-[20px] w-full max-w-lg overflow-hidden z-10 border border-[#3a3a3a]'>
+            {/* Header */}
+            <div className='bg-accent px-6 py-5 flex items-center justify-between'>
+              <h2 className='text-fluid-2xl font-semibold text-white heading'>
+                Edit Evaluator
+              </h2>
+              <button
+                onClick={handleCloseEditModal}
+                className='text-white hover:opacity-80 transition-opacity'
+              >
+                <HiX className='w-6 h-6' />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleUpdateEvaluator} className='p-6'>
+              {/* Full Name */}
+              <div className='mb-5'>
+                <label className='block text-white text-fluid-base text-body mb-2'>
+                  Full Name
+                </label>
+                <input
+                  type='text'
+                  name='fullName'
+                  value={editFormData.fullName}
+                  onChange={handleEditInputChange}
+                  placeholder='John Doe'
+                  required
+                  className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a]'
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className='flex gap-3'>
+                <button
+                  type='button'
+                  onClick={handleCloseEditModal}
+                  disabled={actionLoading}
+                  className='flex-1 bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-base text-body border border-[#4a4a4a]'
+                >
+                  Cancel
+                </button>
+                <button
+                  type='submit'
+                  disabled={actionLoading}
+                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base flex justify-center items-center'
+                >
+                  {actionLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Update Evaluator'}
                 </button>
               </div>
             </form>
