@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { db, auth } from '@/lib/firebase';
-import AdminSidebar from '@/components/layout/AdminSidebar';
-import BackButton from '@/components/ui/BackButton';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { createUser } from '@/features/authentication/services/authService';
+import { db } from '@/services/firebase/config';
+import AdminSidebar from '@/features/admin/components/AdminSidebar';
+import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
+import toast, { Toaster } from 'react-hot-toast';
 
 const RefereesPage = () => {
   const router = useRouter();
@@ -28,6 +29,7 @@ const RefereesPage = () => {
   const [editingReferee, setEditingReferee] = useState(null);
   const [referees, setReferees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, 'users'), where('role', '==', 'referee'));
@@ -38,6 +40,10 @@ const RefereesPage = () => {
       });
       setReferees(refereesData);
       setLoading(false);
+    }, (error) => {
+        console.error("Error fetching referees:", error);
+        toast.error("Failed to load referees.");
+        setLoading(false);
     });
 
     return () => unsubscribe();
@@ -74,22 +80,41 @@ const RefereesPage = () => {
 
   const handleSubmitReferee = async (e) => {
     e.preventDefault();
+    setActionLoading(true);
     try {
-      const { user } = await createUserWithEmailAndPassword(
-        auth,
+      // 1. Create User via Cloud Function (to avoid Admin logout)
+      const result = await createUser(
         formData.email,
-        formData.password
+        formData.password,
+        formData.fullName,
+        'referee'
       );
-      await setDoc(doc(db, 'users', user.uid), {
-        displayName: formData.fullName,
-        email: formData.email,
-        role: 'referee',
-        tier: 'Tier 100',
+      
+      const uid = result.data.uid;
+
+      // 2. Update Firestore Document with specific dashboard fields
+      // The Cloud Function creates the basic doc, we enrich it here
+      await updateDoc(doc(db, 'users', uid), {
+        tier: 'Tier 100', // Default tier
         photoURL: '',
+        avgScore: 0,
+        evaluations: 0,
+        status: 'Active',
+        suggestedTier: 'Tier 100',
       });
+      
+      toast.success("Referee added successfully!");
       handleCloseAddModal();
     } catch (error) {
       console.error('Error creating new referee:', error);
+      // specific error code from Cloud Function for duplicate email
+      if (error.code === 'already-exists') {
+          toast.error("A user with this email address already exists.");
+      } else {
+          toast.error(`Failed to add referee: ${error.message}`);
+      }
+    } finally {
+        setActionLoading(false);
     }
   };
 
@@ -102,8 +127,8 @@ const RefereesPage = () => {
     setEditingReferee(referee);
     setEditFormData({
       id: referee.id,
-      fullName: referee.displayName,
-      tier: referee.tier,
+      fullName: referee.displayName || '',
+      tier: referee.tier || 'Tier 100',
     });
     setShowEditModal(true);
   };
@@ -129,6 +154,7 @@ const RefereesPage = () => {
   const handleUpdateReferee = async (e) => {
     e.preventDefault();
     if (!editingReferee) return;
+    setActionLoading(true);
 
     try {
       const refereeRef = doc(db, 'users', editingReferee.id);
@@ -136,24 +162,32 @@ const RefereesPage = () => {
         displayName: editFormData.fullName,
         tier: editFormData.tier,
       });
+      toast.success("Referee updated successfully!");
       handleCloseEditModal();
     } catch (error) {
       console.error('Error updating referee:', error);
+      toast.error("Failed to update referee.");
+    } finally {
+        setActionLoading(false);
     }
   };
 
   const handleDeleteReferee = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this referee? This action cannot be undone.')) {
+    if (window.confirm('Are you sure you want to delete this referee? This will remove their data from the dashboard.')) {
       try {
         await deleteDoc(doc(db, 'users', id));
+        toast.success("Referee deleted from dashboard.");
+        // Note: This does not delete the Auth user. That requires a Cloud Function or Admin SDK.
       } catch (error) {
         console.error('Error deleting referee:', error);
+        toast.error("Failed to delete referee.");
       }
     }
   };
 
   const getTierColor = (tier) => {
+    if (!tier) return 'bg-[#e5e7eb] text-[#374151]';
     switch (tier) {
       case 'Tier 100':
         return 'bg-[#fbbf24] text-[#78350f]';
@@ -170,6 +204,7 @@ const RefereesPage = () => {
 
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
+      <Toaster />
       {/* Sidebar */}
       <AdminSidebar
         isOpen={sidebarOpen}
@@ -296,7 +331,7 @@ const RefereesPage = () => {
                                 referee.tier
                               )}`}
                             >
-                              {referee.tier}
+                              {referee.tier || 'N/A'}
                             </span>
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
@@ -305,7 +340,7 @@ const RefereesPage = () => {
                                 referee.suggestedTier
                               )}`}
                             >
-                              {referee.suggestedTier}
+                              {referee.suggestedTier || 'N/A'}
                             </span>
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
@@ -325,7 +360,7 @@ const RefereesPage = () => {
                             )}
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            {referee.nextAssignment ? (
+                            {referee.nextAssignment?.dateTime ? (
                               <div>
                                 <div className='font-semibold'>
                                   {new Date(
@@ -353,14 +388,14 @@ const RefereesPage = () => {
                             )}
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            {referee.avgScore}
+                            {referee.avgScore || 0}
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body text-center whitespace-nowrap'>
-                            {referee.evaluations}
+                            {referee.evaluations || 0}
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
                             <span className='inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
-                              {referee.status}
+                              {referee.status || 'Active'}
                             </span>
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
@@ -473,7 +508,7 @@ const RefereesPage = () => {
                   name='email'
                   value={formData.email}
                   onChange={handleInputChange}
-                  placeholder='john.doe@gmailntboa.com'
+                  placeholder='john.doe@ntboa.com'
                   required
                   className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a]'
                 />
@@ -491,7 +526,7 @@ const RefereesPage = () => {
                   onChange={handleInputChange}
                   placeholder='••••••••••'
                   required
-                  className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-.    -accent/50 transition-all border border-[#4a4a4a]'
+                  className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a]'
                 />
               </div>
 
@@ -500,15 +535,17 @@ const RefereesPage = () => {
                 <button
                   type='button'
                   onClick={handleCloseAddModal}
+                  disabled={actionLoading}
                   className='flex-1 bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-base text-body border border-[#4a4a4a]'
                 >
                   Cancel
                 </button>
                 <button
                   type='submit'
-                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base'
+                  disabled={actionLoading}
+                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base flex justify-center items-center'
                 >
-                  Add Referee
+                  {actionLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Add Referee'}
                 </button>
               </div>
             </form>
@@ -581,15 +618,17 @@ const RefereesPage = () => {
                 <button
                   type='button'
                   onClick={handleCloseEditModal}
+                  disabled={actionLoading}
                   className='flex-1 bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-base text-body border border-[#4a4a4a]'
                 >
                   Cancel
                 </button>
                 <button
                   type='submit'
-                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base'
+                  disabled={actionLoading}
+                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base flex justify-center items-center'
                 >
-                  Update Referee
+                  {actionLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Update Referee'}
                 </button>
               </div>
             </form>

@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import AdminSidebar from '@/components/layout/AdminSidebar';
-import BackButton from '@/components/ui/BackButton';
+import { db } from '@/services/firebase/config';
+import AdminSidebar from '@/features/admin/components/AdminSidebar';
+import BackButton from '@/ui/BackButton';
 import { HiMenu, HiX } from 'react-icons/hi';
 import { FiUsers, FiUser } from 'react-icons/fi';
 

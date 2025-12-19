@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { collection, query, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/components/layout/AdminSidebar';
-import BackButton from '@/components/ui/BackButton';
+import AdminSidebar from '@/features/admin/components/AdminSidebar';
+import BackButton from '@/ui/BackButton';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
