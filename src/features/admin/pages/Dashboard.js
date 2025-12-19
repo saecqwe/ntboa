@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit, orderBy, getDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import AdminSidebar from '@/components/layout/AdminSidebar';
-import BackButton from '@/components/ui/BackButton';
+import { db } from '@/services/firebase/config';
+import AdminSidebar from '@/features/admin/components/AdminSidebar';
+import BackButton from '@/ui/BackButton';
 import { HiOutlineUsers, HiOutlineDocumentText, HiMenu } from 'react-icons/hi';
 import { HiStar } from 'react-icons/hi2';
 import { FaTrophy } from 'react-icons/fa';

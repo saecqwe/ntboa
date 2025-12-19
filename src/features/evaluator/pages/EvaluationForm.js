@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { IoMic, IoArrowBack, IoPeople } from 'react-icons/io5';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
-import { useAuth } from '@/features/auth/hooks/useAuth';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 export const dynamic = 'force-dynamic';
 

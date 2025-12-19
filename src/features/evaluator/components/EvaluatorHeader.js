@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
-import BackButton from './BackButton';
+import BackButton from '@/ui/BackButton';
 
 const EvaluatorHeader = ({
   userName = 'User',

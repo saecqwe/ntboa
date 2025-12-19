@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
-import BackButton from '@/components/ui/BackButton';
+import BackButton from '@/ui/BackButton';
 
 const RefereeDashboardPage = () => {
   const [profileData, setProfileData] = useState({

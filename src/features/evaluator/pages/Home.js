@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { IoBasketballOutline } from 'react-icons/io5';
 import { FaStar, FaTrophy } from 'react-icons/fa';
 import Link from 'next/link';
-import EvaluatorHeader from '@/components/layout/EvaluatorHeader';
+import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 
 const EvaluatorHome = () => {
   // Profile data state

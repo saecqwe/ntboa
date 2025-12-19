@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { HiOutlineMail, HiOutlineLockClosed } from 'react-icons/hi';
-import { useAuth } from '@/features/auth/hooks/useAuth';
-import { login, getUserDocument } from '@/features/auth/services/authService';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { login, getUserDocument } from '@/features/authentication/services/authService';
 
 const AdminLoginPage = () => {
   const router = useRouter();

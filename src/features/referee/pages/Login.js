@@ -3,8 +3,8 @@ import { PiGlobeSimpleThin } from 'react-icons/pi';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/features/auth/hooks/useAuth';
-import { login, getUserDocument } from '@/features/auth/services/authService';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { login, getUserDocument } from '@/features/authentication/services/authService';
 
 const LoginPage = () => {
   const router = useRouter();
