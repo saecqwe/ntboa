@@ -1,7 +1,7 @@
 import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 // IMPORT THE PROVIDER
-import { AuthProvider } from "@/features/auth/components/AuthProvider";
+import { AuthProvider } from "@/features/authentication/components/AuthProvider";
 
 const inter = Inter({
   variable: "--font-inter",
