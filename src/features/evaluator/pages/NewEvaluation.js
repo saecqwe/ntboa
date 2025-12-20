@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { IoSearch } from 'react-icons/io5';
 import { useRouter } from 'next/navigation';
-import EvaluatorHeader from '@/components/layout/EvaluatorHeader';
+import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 
 const NewEvaluationPage = () => {
   const router = useRouter();
