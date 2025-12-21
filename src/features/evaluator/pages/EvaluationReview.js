@@ -1,9 +1,11 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import EvaluatorHeader from '@/components/layout/EvaluatorHeader';
-
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/services/firebase/config';
+import EvaluatorHeader from '../components/EvaluatorHeader';
 export const dynamic = 'force-dynamic';
 
 const CATEGORY_LIST = [
@@ -20,12 +22,18 @@ const CATEGORY_LIST = [
 const EvaluationReviewContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const officialName = searchParams.get('official') || 'Michael Johnson';
-  const officialTier = searchParams.get('tier') || 'Tier 150';
+  const officialParam = searchParams.get('official');
+  const official = officialParam
+    ? JSON.parse(officialParam)
+    : { name: 'Michael Johnson', tier: 'Tier 150', id: null };
+
   const ratings = JSON.parse(searchParams.get('ratings') || '{}');
   const comments = JSON.parse(searchParams.get('comments') || '{}');
+
+  const gameLocation = searchParams.get('gameLocation');
 
   const [expandedCategories, setExpandedCategories] = useState(() => {
     const initialExpanded = {};
@@ -35,7 +43,22 @@ const EvaluationReviewContent = () => {
     return initialExpanded;
   });
 
-  const userData = { name: 'John', initials: 'JS' };
+  // Profile data state
+  const [userData, setUserData] = useState({
+    name: 'John',
+    initials: 'JS',
+  });
+
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('evaluatorProfile');
+    if (savedProfile) {
+      const profile = JSON.parse(savedProfile);
+      setUserData({
+        name: profile.name || 'John',
+        initials: profile.initials || 'JS',
+      });
+    }
+  }, []);
 
   const toggleCategory = (categoryId) => {
     if (!comments[categoryId]) return;
@@ -45,19 +68,40 @@ const EvaluationReviewContent = () => {
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!user || !official.id) {
+      alert(
+        'You must be logged in and have a valid official to submit an evaluation.'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      console.log('Evaluation submitted successfully:', {
-        official: officialName,
-        tier: officialTier,
-        ratings,
-        comments,
-      });
+    try {
+      const scores = ratings || {};
+      const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
+
+      const evaluationData = {
+        refereeId: official.id,
+        evaluatorId: user.uid,
+        scores,
+        totalScore,
+        comments: comments || {},
+        gameDate: official.date,
+        location: gameLocation || official.location,
+        createdAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, 'evaluations'), evaluationData);
+
       alert('Evaluation submitted successfully!');
       router.push('/evaluator/home');
-    }, 1500);
+    } catch (error) {
+      console.error('Error submitting evaluation:', error);
+      alert('Failed to submit evaluation. Please try again.');
+      setIsSubmitting(false);
+    }
   };
 
   const ratingValues = Object.values(ratings).filter(Boolean);
@@ -102,12 +146,12 @@ const EvaluationReviewContent = () => {
               <div className='bg-[#2a2a2a] rounded-[20px] p-6 lg:p-7 border border-[#3a3a3a] flex flex-col items-center text-center'>
                 <div className='w-20 h-20 lg:w-24 lg:h-24 rounded-full bg-accent flex items-center justify-center mb-4'>
                   <span className='text-[32px] lg:text-[36px] text-white font-bold'>
-                    {officialName.charAt(0)}
+                    {official.name.charAt(0)}
                   </span>
                 </div>
 
                 <h3 className='text-[20px] lg:text-[22px] font-semibold text-white text-body mb-1'>
-                  {officialName}
+                  {official.name}
                 </h3>
 
                 <p className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body'>
@@ -131,7 +175,7 @@ const EvaluationReviewContent = () => {
                 </div>
 
                 <div className='bg-[#2a2a2a] text-white text-[14px] lg:text-[15px] font-semibold px-5 py-2.5 rounded-full text-body whitespace-nowrap'>
-                  {officialTier}
+                  {official.tier}
                 </div>
               </div>
             </div>

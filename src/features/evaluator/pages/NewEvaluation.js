@@ -1,73 +1,70 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IoSearch } from 'react-icons/io5';
 import { useRouter } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
+import { getReferees } from '@/features/evaluator/services/refereeService';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const NewEvaluationPage = () => {
   const router = useRouter();
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOfficials, setSelectedOfficials] = useState([]);
   const [isGroupEvaluation, setIsGroupEvaluation] = useState(false);
+  const [officials, setOfficials] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock user data - replace with real data from your backend
-  const userData = {
+  // Profile data state
+  const [userData, setUserData] = useState({
     name: 'John',
     initials: 'JS',
-  };
+  });
 
-  // Mock officials data - replace with real data from your backend
-  const officials = [
-    {
-      id: 1,
-      name: 'Michael Johnson',
-      tier: 'Tier 150',
-      location: 'Madison High School Gym',
-      date: '2024-12-15',
-      time: '7:00 PM',
-    },
-    {
-      id: 2,
-      name: 'Sarah Williams',
-      tier: 'Tier 200',
-      location: 'Central Community Center',
-      date: '2024-12-16',
-      time: '6:30 PM',
-    },
-    {
-      id: 3,
-      name: 'Emily Chen',
-      tier: 'Tier 100',
-      location: 'Riverside Sports Complex',
-      date: '2024-12-17',
-      time: '8:00 PM',
-    },
-    {
-      id: 4,
-      name: 'Robert Taylor',
-      tier: 'Tier 250',
-      location: 'Oak Valley Arena',
-      date: '2024-12-18',
-      time: '7:30 PM',
-    },
-    {
-      id: 5,
-      name: 'Jessica Brown',
-      tier: 'Tier 120',
-      location: 'Lincoln Middle School',
-      date: '2024-12-19',
-      time: '6:00 PM',
-    },
-    {
-      id: 6,
-      name: 'James Wilson',
-      tier: 'Tier 300',
-      location: 'Westside Basketball Court',
-      date: '2024-12-20',
-      time: '7:45 PM',
-    },
-  ];
+  // Load profile data
+  useEffect(() => {
+    const loadProfile = () => {
+      const savedProfile = localStorage.getItem('evaluatorProfile');
+      if (savedProfile) {
+        const profile = JSON.parse(savedProfile);
+        setUserData({
+          name: profile.name || 'John',
+          initials: profile.initials || 'JS',
+        });
+      }
+    };
+    loadProfile();
+    window.addEventListener('storage', loadProfile);
+    window.addEventListener('profileUpdated', loadProfile);
+    return () => {
+      window.removeEventListener('storage', loadProfile);
+      window.removeEventListener('profileUpdated', loadProfile);
+    };
+  }, []);
+
+  // Fetch officials
+  useEffect(() => {
+    const fetchOfficials = async () => {
+      setIsLoading(true);
+      const data = await getReferees();
+      // Map Firestore data to UI structure
+      const mappedOfficials = data.map((ref) => ({
+        id: ref.id,
+        name: ref.displayName || ref.name || 'Unknown Official',
+        tier: ref.tier || 'N/A',
+        // Use nextAssignment if available, otherwise placeholders
+        location: ref.nextAssignment?.location || 'No assignment',
+        date: ref.nextAssignment?.dateTime || new Date().toISOString(),
+        time: ref.nextAssignment?.dateTime
+          ? new Date(ref.nextAssignment.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : 'N/A',
+      }));
+      setOfficials(mappedOfficials);
+      setIsLoading(false);
+    };
+    fetchOfficials();
+  }, []);
 
   // Filter officials based on search query
   const filteredOfficials = officials.filter((official) =>
@@ -93,6 +90,7 @@ const NewEvaluationPage = () => {
   const handleNext = () => {
     if (selectedOfficials.length > 0) {
       const officials = selectedOfficials.map((official) => ({
+        id: official.id,
         name: official.name,
         tier: official.tier,
         location: official.location,
@@ -100,7 +98,7 @@ const NewEvaluationPage = () => {
         time: official.time,
       }));
 
-      const url = `/evaluator/evaluation-form?officials=${encodeURIComponent(
+      const url = `/evaluator/game-context?officials=${encodeURIComponent(
         JSON.stringify(officials)
       )}&isGroup=${isGroupEvaluation}`;
       router.push(url);
@@ -177,7 +175,13 @@ const NewEvaluationPage = () => {
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             {/* Officials List */}
             <div className='space-y-3 lg:space-y-3'>
-              {filteredOfficials.length > 0 ? (
+              {isLoading ? (
+                <div className='text-center py-12'>
+                  <div className='text-[#9ca3af] text-[16px] text-body'>
+                    Loading officials...
+                  </div>
+                </div>
+              ) : filteredOfficials.length > 0 ? (
                 filteredOfficials.map((official) => (
                   <button
                     key={official.id}

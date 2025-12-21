@@ -29,19 +29,11 @@ const EvaluationFormContent = () => {
 
   const officialsParam = searchParams.get('officials');
   const isGroupParam = searchParams.get('isGroup') === 'true';
+  const location = searchParams.get('location');
 
   const officials = officialsParam
     ? JSON.parse(decodeURIComponent(officialsParam))
-    : [
-        {
-          id: 'default-id',
-          name: 'Michael Johnson',
-          tier: 'Tier 150',
-          location: 'Default Location',
-          date: '2024-12-15',
-          time: '7:00 PM',
-        },
-      ];
+    : [];
 
   const [activeTab, setActiveTab] = useState(0);
   const [isGroupEvaluation] = useState(isGroupParam);
@@ -419,34 +411,29 @@ const EvaluationFormContent = () => {
     }
   };
 
-  const handleNext = async () => {
-    if (!user) {
-      alert('You must be logged in to submit an evaluation.');
+  const handleNext = () => {
+    if (isGroupTab) {
+      alert("Group submission not implemented. Please submit from an official's tab.");
       return;
     }
 
-    try {
-      const officialData = officials[activeTab];
-      const scores = ratings[`official_${activeTab}`] || {};
-      const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
-
-      const evaluationData = {
-        refereeId: officialData.id,
-        evaluatorId: user.uid,
-        scores,
-        totalScore,
-        comments: comments[`official_${activeTab}`] || {},
-        gameDate: officialData.date,
-        location: officialData.location,
-        createdAt: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, 'evaluations'), evaluationData);
-      router.push('/evaluator/home');
-    } catch (error) {
-      console.error('Error submitting evaluation:', error);
-      alert('Failed to submit evaluation. Please try again.');
+    const officialData = officials[activeTab];
+    if (!officialData) {
+      alert('No official selected.');
+      return;
     }
+
+    const tabKey = `official_${activeTab}`;
+    const officialRatings = ratings[tabKey] || {};
+    const officialComments = comments[tabKey] || {};
+
+    const params = new URLSearchParams();
+    params.set('official', JSON.stringify(officialData));
+    params.set('ratings', JSON.stringify(officialRatings));
+    params.set('comments', JSON.stringify(officialComments));
+    params.set('gameLocation', location || '');
+
+    router.push(`/evaluator/evaluation-review?${params.toString()}`);
   };
 
   return (

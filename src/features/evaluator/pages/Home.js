@@ -5,13 +5,28 @@ import { IoBasketballOutline } from 'react-icons/io5';
 import { FaStar, FaTrophy } from 'react-icons/fa';
 import Link from 'next/link';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
+import { getDashboardData } from '@/features/evaluator/services/dashboardService';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const EvaluatorHome = () => {
+  const { user } = useAuth();
   // Profile data state
   const [userData, setUserData] = useState({
     name: 'John',
     initials: 'JS',
   });
+  
+  // Dashboard data state
+  const [dashboardData, setDashboardData] = useState({
+    stats: {
+      totalEvaluations: 0,
+      averageRating: 0,
+      topTierOfficials: 0,
+    },
+    recentEvaluations: [],
+    quickOverview: { thisMonth: 0, thisWeek: 0, pendingReviews: 0, completionRate: '0%' },
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load profile data from localStorage
   useEffect(() => {
@@ -47,53 +62,48 @@ const EvaluatorHome = () => {
     };
   }, []);
 
+  // Fetch dashboard data
+  useEffect(() => {
+    const loadData = async () => {
+      if (user) {
+        try {
+          const data = await getDashboardData(user.uid);
+          setDashboardData(data);
+        } catch (error) {
+          console.error('Failed to load dashboard data:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    loadData();
+  }, [user]);
+
   const statsCards = [
     {
       id: 1,
       icon: IoBasketballOutline,
       iconSize: 'w-11 h-11 lg:w-12 lg:h-12',
       label: 'Total\nEvaluations',
-      value: 56,
+      value: dashboardData.stats.totalEvaluations,
     },
     {
       id: 2,
       icon: FaStar,
       iconSize: 'w-10 h-10 lg:w-11 lg:h-11',
       label: 'Average\nRating',
-      value: 4.8,
+      value: dashboardData.stats.averageRating,
     },
     {
       id: 3,
       icon: FaTrophy,
       iconSize: 'w-10 h-10 lg:w-11 lg:h-11',
       label: 'Top Tier\nOfficials',
-      value: 8,
+      value: dashboardData.stats.topTierOfficials,
     },
   ];
 
-  const recentEvaluations = [
-    {
-      id: 1,
-      name: 'Michael Johnson',
-      date: 'Oct 28, 2025',
-      score: '38/40',
-      tier: 'Tier 150',
-    },
-    {
-      id: 2,
-      name: 'Sarah Williams',
-      date: 'Oct 25, 2025',
-      score: '36/40',
-      tier: 'Tier 200',
-    },
-    {
-      id: 3,
-      name: 'David Martinez',
-      date: 'Oct 22, 2025',
-      score: '40/40',
-      tier: 'Tier 100',
-    },
-  ];
+  const recentEvaluations = dashboardData.recentEvaluations;
 
   return (
     <div className='min-h-screen bg-[#181818] flex flex-col bg-gradient-secondary'>
@@ -227,7 +237,7 @@ const EvaluatorHome = () => {
                             This Month
                           </div>
                           <div className='text-white font-bold heading text-[16px]'>
-                            12
+                            {dashboardData.quickOverview.thisMonth}
                           </div>
                         </div>
                         <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
@@ -235,7 +245,7 @@ const EvaluatorHome = () => {
                             This Week
                           </div>
                           <div className='text-white font-bold heading text-[16px]'>
-                            3
+                            {dashboardData.quickOverview.thisWeek}
                           </div>
                         </div>
                         <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
@@ -243,7 +253,7 @@ const EvaluatorHome = () => {
                             Pending Reviews
                           </div>
                           <div className='text-accent font-bold heading text-[16px]'>
-                            2
+                            {dashboardData.quickOverview.pendingReviews}
                           </div>
                         </div>
                         <div className='flex justify-between items-center'>
@@ -251,7 +261,7 @@ const EvaluatorHome = () => {
                             Completion Rate
                           </div>
                           <div className='text-white font-bold heading text-[16px]'>
-                            98%
+                            {dashboardData.quickOverview.completionRate}
                           </div>
                         </div>
                       </div>

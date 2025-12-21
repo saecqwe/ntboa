@@ -67,8 +67,8 @@ const EvaluationsPage = () => {
       const evaluationsQuery = query(collection(db, 'evaluations'));
       const evaluationsSnapshot = await getDocs(evaluationsQuery);
       const evaluationsData = await Promise.all(
-        evaluationsSnapshot.docs.map(async (doc) => {
-          const evaluation = doc.data();
+        evaluationsSnapshot.docs.map(async (evalDoc) => {
+          const evaluation = evalDoc.data();
           const refereeDoc = await getDoc(doc(db, 'users', evaluation.refereeId));
           const evaluatorDoc = await getDoc(doc(db, 'users', evaluation.evaluatorId));
           return {
