@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { HiOutlineMail, HiOutlineLockClosed } from 'react-icons/hi';
@@ -13,6 +13,12 @@ const AdminLoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (userData?.role === 'admin') {
+      router.push('/admin/dashboard');
+    }
+  }, [userData, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -3,7 +3,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/services/firebase/config';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/services/firebase/config';
 import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
@@ -166,13 +167,14 @@ const EvaluatorsPage = () => {
 
   const handleDeleteEvaluator = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this evaluator? This will remove their data from the dashboard.')) {
+    if (window.confirm('Are you sure you want to delete this evaluator? This will disable their account.')) {
       try {
-        await deleteDoc(doc(db, 'users', id));
-        toast.success("Evaluator deleted from dashboard.");
+        const suspendUser = httpsCallable(functions, 'suspendUser');
+        await suspendUser({ uid: id });
+        toast.success("Evaluator account suspended.");
       } catch (error) {
-        console.error('Error deleting evaluator:', error);
-        toast.error("Failed to delete evaluator.");
+        console.error('Error suspending evaluator:', error);
+        toast.error("Failed to suspend evaluator.");
       }
     }
   };
@@ -254,7 +256,7 @@ const EvaluatorsPage = () => {
                       evaluators.map((evaluator) => (
                         <tr
                           key={evaluator.id}
-                          className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
+                          className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
                         >
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
                             {evaluator.displayName}
@@ -274,8 +276,9 @@ const EvaluatorsPage = () => {
                                 onClick={(e) => handleEditEvaluator(evaluator, e)}
                                 className='hover:opacity-80 transition-opacity'
                                 title='Edit'
+                                disabled={evaluator.status === 'Disabled'}
                               >
-                                <HiPencil className='w-5 h-5 lg:w-6 lg:h-6 text-[#22c55e]' />
+                                <HiPencil className={`w-5 h-5 lg:w-6 lg:h-6 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#22c55e]'}`} />
                               </button>
                               <button
                                 onClick={(e) =>
@@ -283,8 +286,9 @@ const EvaluatorsPage = () => {
                                 }
                                 className='hover:opacity-80 transition-opacity'
                                 title='Delete'
+                                disabled={evaluator.status === 'Disabled'}
                               >
-                                <HiTrash className='w-5 h-5 lg:w-6 lg:h-6 text-[#ef4444]' />
+                                <HiTrash className={`w-5 h-5 lg:w-6 lg:h-6 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#ef4444]'}`} />
                               </button>
                             </div>
                           </td>

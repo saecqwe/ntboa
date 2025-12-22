@@ -1,7 +1,11 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { LuUserCog, LuUsers, LuShieldCheck } from 'react-icons/lu';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const roles = [
   {
@@ -28,6 +32,25 @@ const roles = [
 ];
 
 const Page = () => {
+  const { user, userData, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user && userData) {
+      if (userData.role === 'admin') router.replace('/admin/dashboard');
+      else if (userData.role === 'referee') router.replace('/referee/home');
+      else if (userData.role === 'evaluator') router.replace('/evaluator/home');
+    }
+  }, [user, userData, loading, router]);
+
+  if (loading) {
+     return (
+       <div className="min-h-screen flex items-center justify-center bg-[#040404]">
+         <div className="w-8 h-8 border-4 border-[#d4315a] border-t-transparent rounded-full animate-spin"></div>
+       </div>
+     );
+  }
+
   return (
     <div className='min-h-screen bg-[#040404] overflow-hidden relative'>
       <div className='absolute inset-0 bg-gradient-to-br from-[#0f0f0f] via-[#040404] to-[#090909]' />

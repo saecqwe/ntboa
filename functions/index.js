@@ -82,3 +82,44 @@ exports.createNewUser = https.onCall(async (data, context) => {
     throw new https.HttpsError('internal', 'An unexpected error occurred while creating the user.');
   }
 });
+
+exports.suspendUser = https.onCall(async (data, context) => {
+  const { uid } = data;
+
+  // Check for authentication and admin role if needed
+  // if (!context.auth || context.auth.token.role !== 'admin') {
+  //   throw new https.HttpsError('permission-denied', 'Only admins can suspend users.');
+  // }
+
+  if (!uid) {
+    throw new https.HttpsError('invalid-argument', 'The function must be called with a "uid".');
+  }
+
+  try {
+    // 1. Delete the user from Firebase Authentication
+    await auth.deleteUser(uid);
+    logger.info(`Successfully deleted user ${uid} from Auth.`);
+
+    // 2. Update the user's Firestore document to status 'Disabled'
+    // We do NOT delete the document to preserve history (evaluations, etc.)
+    await db.collection('users').doc(uid).update({
+      status: 'Disabled',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    logger.info(`Successfully marked user document ${uid} as Disabled.`);
+
+    return { success: true, message: 'User suspended successfully.' };
+  } catch (error) {
+    logger.error('Error suspending user:', error);
+    // If user is not found in Auth, we might still want to ensure Firestore is updated
+    if (error.code === 'auth/user-not-found') {
+       logger.warn(`User ${uid} not found in Auth, proceeding to mark Firestore doc as Disabled.`);
+       await db.collection('users').doc(uid).update({
+        status: 'Disabled',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { success: true, message: 'User was not in Auth, but marked as Disabled in DB.' };
+    }
+    throw new https.HttpsError('internal', 'Unable to suspend user.');
+  }
+});

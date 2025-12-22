@@ -102,12 +102,12 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
           <HiX className='w-6 h-6' />
         </button>
 
-        <div className='p-6 flex items-center gap-3'>
+        <Link href="/admin/dashboard" onClick={closeSidebar} className='p-6 flex items-center gap-3 hover:opacity-80 transition-opacity'>
           <div className='w-12 h-12 bg-white/20 rounded-full flex items-center justify-center'>
             <PiGlobeSimpleThin className='w-7 h-7 text-white' />
           </div>
           <h1 className='text-fluid-2xl font-bold text-white heading'>NTBOA</h1>
-        </div>
+        </Link>
 
         <nav className='flex-1 px-4 pt-4'>
           <ul className='space-y-2'>

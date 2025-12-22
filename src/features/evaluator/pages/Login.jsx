@@ -9,10 +9,16 @@ import { login, getUserDocument } from '@/features/authentication/services/authS
 
 const LoginPage = () => {
   const router = useRouter();
-  const { userData } = useAuth();
+  const { userData, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && userData?.role === 'evaluator') {
+      router.replace('/evaluator/home');
+    }
+  }, [userData, authLoading, router]);
 
   const fields = [
     {

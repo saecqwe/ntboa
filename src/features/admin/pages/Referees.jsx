@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { createUser } from '@/features/authentication/services/authService';
-import { db } from '@/services/firebase/config';
+import { db, functions } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
@@ -177,14 +178,14 @@ const RefereesPage = () => {
 
   const handleDeleteReferee = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this referee? This will remove their data from the dashboard.')) {
+    if (window.confirm('Are you sure you want to delete this referee? This will disable their account but keep their history.')) {
       try {
-        await deleteDoc(doc(db, 'users', id));
-        toast.success("Referee deleted from dashboard.");
-        // Note: This does not delete the Auth user. That requires a Cloud Function or Admin SDK.
+        const suspendUser = httpsCallable(functions, 'suspendUser');
+        await suspendUser({ uid: id });
+        toast.success("Referee account suspended/deleted.");
       } catch (error) {
-        console.error('Error deleting referee:', error);
-        toast.error("Failed to delete referee.");
+        console.error('Error suspending referee:', error);
+        toast.error("Failed to suspend referee.");
       }
     }
   };
@@ -320,7 +321,7 @@ const RefereesPage = () => {
                         <tr
                           key={referee.id}
                           onClick={() => handleViewReferee(referee.id)}
-                          className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
+                          className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer ${referee.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
                         >
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
                             {referee.displayName}
@@ -397,7 +398,7 @@ const RefereesPage = () => {
                             {referee.evaluations || 0}
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
-                            <span className='inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
+                            <span className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${referee.status === 'Disabled' ? 'bg-red-900/50 text-red-200' : 'bg-[#e5e7eb] text-[#374151]'}`}>
                               {referee.status || 'Active'}
                             </span>
                           </td>
@@ -409,8 +410,9 @@ const RefereesPage = () => {
                                 }
                                 className='hover:opacity-80 transition-opacity'
                                 title='Edit'
+                                disabled={referee.status === 'Disabled'}
                               >
-                                <HiPencil className='w-5 h-5 lg:w-6 lg:h-6 text-[#22c55e]' />
+                                <HiPencil className={`w-5 h-5 lg:w-6 lg:h-6 ${referee.status === 'Disabled' ? 'text-gray-500' : 'text-[#22c55e]'}`} />
                               </button>
                               <button
                                 onClick={(e) =>
@@ -418,8 +420,9 @@ const RefereesPage = () => {
                                 }
                                 className='hover:opacity-80 transition-opacity'
                                 title='Delete'
+                                disabled={referee.status === 'Disabled'}
                               >
-                                <HiTrash className='w-5 h-5 lg:w-6 lg:h-6 text-[#ef4444]' />
+                                <HiTrash className={`w-5 h-5 lg:w-6 lg:h-6 ${referee.status === 'Disabled' ? 'text-gray-500' : 'text-[#ef4444]'}`} />
                               </button>
                             </div>
                           </td>
