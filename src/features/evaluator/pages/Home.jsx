@@ -171,41 +171,56 @@ const EvaluatorHome = () => {
 
                   {/* Recent Evaluations Section */}
                   <div>
-                    <h3 className='text-[20px] lg:text-[24px] font-bold text-white heading mb-4 lg:mb-5'>
-                      Recent Evaluations
-                    </h3>
+                    <div className='flex items-center justify-between mb-4 lg:mb-5'>
+                      <h3 className='text-[20px] lg:text-[24px] font-bold text-white heading'>
+                        Recent Evaluations
+                      </h3>
+                      <Link 
+                        href='/evaluator/evaluations'
+                        className='text-[14px] font-medium text-accent hover:text-accent/80 transition-colors'
+                      >
+                        View All
+                      </Link>
+                    </div>
 
                     {/* Evaluations List */}
                     <div className='space-y-3 lg:space-y-3'>
-                      {recentEvaluations.map((evaluation) => (
-                        <div
-                          key={evaluation.id}
-                          className='bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all cursor-pointer'
-                        >
-                          {/* Left Side - Name and Date */}
-                          <div className='flex-1 pr-4'>
-                            <div className='text-[18px] lg:text-[19px] font-semibold text-white heading mb-0.5 leading-tight'>
-                              {evaluation.name}
+                      {recentEvaluations.length > 0 ? (
+                        recentEvaluations.map((evaluation) => (
+                          <Link
+                            href={`/evaluator/evaluation/${evaluation.id}`}
+                            key={evaluation.id}
+                            className='bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all cursor-pointer'
+                          >
+                            {/* Left Side - Name and Date */}
+                            <div className='flex-1 pr-4'>
+                              <div className='text-[18px] lg:text-[19px] font-semibold text-white heading mb-0.5 leading-tight'>
+                                {evaluation.name}
+                              </div>
+                              <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-tight'>
+                                {evaluation.date}
+                              </div>
                             </div>
-                            <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-tight'>
-                              {evaluation.date}
-                            </div>
-                          </div>
 
-                          {/* Vertical Divider */}
-                          <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4'></div>
+                            {/* Vertical Divider */}
+                            <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4'></div>
 
-                          {/* Right Side - Score and Tier */}
-                          <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px]'>
-                            <div className='text-base text-white heading leading-none'>
-                              {evaluation.score}
+                            {/* Right Side - Score and Tier */}
+                            <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px]'>
+                              <div className='text-base text-white heading leading-none'>
+                                {evaluation.score}
+                              </div>
+                              <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
+                                {evaluation.tier}
+                              </div>
                             </div>
-                            <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
-                              {evaluation.tier}
-                            </div>
-                          </div>
+                          </Link>
+                        ))
+                      ) : (
+                        <div className='text-center py-8 text-gray-500 bg-[#FFFFFF]/6 rounded-[20px] border border-[#FFFFFF]/20'>
+                          No recent evaluations
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 </div>
