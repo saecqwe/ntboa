@@ -111,6 +111,22 @@ const AssignmentsPage = () => {
     return ids;
   }, [selectedEvaluator, assignments, date]);
 
+  const timeOptions = useMemo(() => {
+    const options = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        const hour = h.toString().padStart(2, '0');
+        const minute = m.toString().padStart(2, '0');
+        const value = `${hour}:${minute}`;
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const displayHour = h % 12 || 12;
+        const label = `${displayHour}:${minute} ${ampm}`;
+        options.push({ value, label });
+      }
+    }
+    return options;
+  }, []);
+
   const filteredEvaluators = evaluators.filter((ev) =>
     ev.displayName?.toLowerCase().includes(evaluatorSearch.toLowerCase())
   );
@@ -128,7 +144,18 @@ const AssignmentsPage = () => {
   };
 
   const handleAssign = async () => {
-    if (!selectedEvaluator || selectedReferees.length === 0 || !date || !time) return;
+    const missingFields = [];
+    if (!date) missingFields.push('Date');
+    if (!time) missingFields.push('Time');
+    if (!location) missingFields.push('Location');
+    if (!selectedEvaluator) missingFields.push('Evaluator');
+    if (selectedReferees.length === 0) missingFields.push('at least one Referee');
+
+    if (missingFields.length > 0) {
+      alert(`Please complete the following required fields:\n\n${missingFields.map(field => `• ${field}`).join('\n')}`);
+      return;
+    }
+
     try {
       const scheduledDate = new Date(`${date}T${time}`);
       const newAssignment = {
@@ -204,15 +231,20 @@ const AssignmentsPage = () => {
                 <h2 className='text-fluid-xl font-bold text-white'>Create New Assignment</h2>
                 <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                   <div className='space-y-2'>
-                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiCalendar /> Date</label>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiCalendar /> Date <span className='text-red-500'>*</span></label>
                     <input type='date' value={date} onChange={(e) => setDate(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] scheme-dark focus:ring-2 focus:ring-accent outline-none' />
                   </div>
                   <div className='space-y-2'>
-                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiClock /> Time</label>
-                    <input type='time' value={time} onChange={(e) => setTime(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] scheme-dark focus:ring-2 focus:ring-accent outline-none' />
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiClock /> Time <span className='text-red-500'>*</span></label>
+                    <select value={time} onChange={(e) => setTime(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] outline-none appearance-none'>
+                      <option value="">Select Time</option>
+                      {timeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className='space-y-2'>
-                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiMapPin /> Location</label>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiMapPin /> Location <span className='text-red-500'>*</span></label>
                     <select value={location} onChange={(e) => setLocation(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] outline-none appearance-none'>
                       <option value="">Select Location</option>
                       {locationsList.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
@@ -223,7 +255,7 @@ const AssignmentsPage = () => {
                 <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
                   <div className='rounded-xl border border-[#3a3a3a] flex flex-col h-[300px]'>
                     <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
-                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUsers className='text-accent' /> Select Evaluator</h3>
+                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUsers className='text-accent' /> Select Evaluator <span className='text-red-500'>*</span></h3>
                       <input type='text' placeholder='Search evaluators...' value={evaluatorSearch} onChange={(e) => setEvaluatorSearch(e.target.value)} className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none' />
                     </div>
                     <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
@@ -238,7 +270,7 @@ const AssignmentsPage = () => {
 
                   <div className='rounded-xl border border-[#3a3a3a] flex flex-col h-[300px]'>
                     <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
-                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUser className='text-accent' /> Select Referees</h3>
+                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUser className='text-accent' /> Select Referees <span className='text-red-500'>*</span></h3>
                       <input type='text' placeholder='Search referees...' value={refereeSearch} onChange={(e) => setRefereeSearch(e.target.value)} className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none' />
                     </div>
                     <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
@@ -259,7 +291,7 @@ const AssignmentsPage = () => {
                 </div>
 
                 <div className='flex justify-end pt-4 border-t border-[#3a3a3a]'>
-                  <button onClick={handleAssign} disabled={!selectedEvaluator || selectedReferees.length === 0 || !date || !time} className='bg-accent disabled:opacity-50 rounded-xl px-8 py-3 font-semibold text-white transition-all shadow-lg'>Confirm Assignment</button>
+                  <button onClick={handleAssign} className='bg-accent hover:opacity-90 rounded-xl px-8 py-3 font-semibold text-white transition-all shadow-lg'>Confirm Assignment</button>
                 </div>
               </div>
             )}

@@ -1,7 +1,7 @@
 'use client';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';

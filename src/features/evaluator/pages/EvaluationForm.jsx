@@ -43,8 +43,33 @@ const EvaluationFormContent = () => {
   const isGroupTab = activeTab === officials.length;
 
   // State for ratings and comments (per official)
-  const [ratings, setRatings] = useState({});
-  const [comments, setComments] = useState({});
+  const [ratings, setRatings] = useState(() => {
+    const initialRatings = searchParams.get('initialRatings');
+    if (initialRatings) {
+      try {
+        const parsed = JSON.parse(initialRatings);
+        return { 'official_0': parsed };
+      } catch (e) {
+        console.error('Error parsing initial ratings:', e);
+        return {};
+      }
+    }
+    return {};
+  });
+
+  const [comments, setComments] = useState(() => {
+    const initialComments = searchParams.get('initialComments');
+    if (initialComments) {
+      try {
+        const parsed = JSON.parse(initialComments);
+        return { 'official_0': parsed };
+      } catch (e) {
+        console.error('Error parsing initial comments:', e);
+        return {};
+      }
+    }
+    return {};
+  });
   const [activeComment, setActiveComment] = useState(null);
   const [isRecording, setIsRecording] = useState({});
   const [recordingStatus, setRecordingStatus] = useState({});

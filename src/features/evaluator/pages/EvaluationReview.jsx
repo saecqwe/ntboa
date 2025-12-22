@@ -19,6 +19,23 @@ const CATEGORY_LIST = [
   { id: 'collaboration', name: 'Team Collaboration' },
 ];
 
+const TIER_DATA = [
+  { tier: '100', range: [38, 40], desc: 'Eligible for any Varsity game. Highest proficiency in all areas. Referee (R) for all assignments unless with another 100. Eligible for all levels during playoffs.' },
+  { tier: '150', range: [36, 37], desc: 'Eligible for any Varsity game. Proficient in all areas. Referee (R) unless with another 100. Eligible for all levels during playoffs.' },
+  { tier: '200', range: [33, 35], desc: 'Eligible for all games. CC at 5A Boys. Above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '300', range: [30, 32], desc: 'Eligible for all games. CC at 6A/5A Girls. Average to above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '350', range: [27, 29], desc: 'Eligible for Varsity CC up to 4A. Boys/Girls 6A/5A JV. Average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '400', range: [23, 26], desc: 'Eligible up to 3A Varsity. Some proficiency in 3-person. High proficiency 2-person CC. Referee (R) for Post Season JV/Freshman/MS.' },
+  { tier: '500', range: [19, 22], desc: 'Eligible up to 2A Varsity. Med-High proficiency 2-person. Eligible for Post Season MS Tournaments.' },
+  { tier: '600', range: [15, 18], desc: 'Unranked. Newer official with limited experience. Eligible for all JV Assignments.' },
+  { tier: '700', range: [8, 14], desc: '1st or 2nd year official. Eligible for primarily middle school with potential for lower-level sub-varsity.' },
+  { tier: '800', range: [0, 7], desc: 'New to the chapter. Learning phase.' },
+];
+
+const calculateTier = (score) => {
+  return TIER_DATA.find(t => score >= t.range[0] && score <= t.range[1]) || TIER_DATA[TIER_DATA.length - 1];
+};
+
 const EvaluationReviewContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,6 +49,12 @@ const EvaluationReviewContent = () => {
 
   const ratings = JSON.parse(searchParams.get('ratings') || '{}');
   const comments = JSON.parse(searchParams.get('comments') || '{}');
+  
+  const ratingValues = Object.values(ratings).filter(Boolean);
+  const totalScore = ratingValues.reduce((acc, val) => acc + val, 0);
+  const maxScore = CATEGORY_LIST.length * 5;
+
+  const currentTier = calculateTier(totalScore);
 
   const gameLocation = searchParams.get('gameLocation');
 
@@ -68,6 +91,16 @@ const EvaluationReviewContent = () => {
     }));
   };
 
+  const handleEdit = () => {
+    const params = new URLSearchParams();
+    params.set('officials', JSON.stringify([official]));
+    params.set('initialRatings', JSON.stringify(ratings));
+    params.set('initialComments', JSON.stringify(comments));
+    if (gameLocation) params.set('location', gameLocation);
+    
+    router.push(`/evaluator/evaluation-form?${params.toString()}`);
+  };
+
   const handleSubmit = async () => {
     if (!user || !official.id) {
       alert(
@@ -80,15 +113,16 @@ const EvaluationReviewContent = () => {
 
     try {
       const scores = ratings || {};
-      const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
+      // totalScore is already calculated above
 
       const evaluationData = {
         refereeId: official.id,
         evaluatorId: user.uid,
         scores,
         totalScore,
+        tier: currentTier.tier, // Save the calculated tier
         comments: comments || {},
-        gameDate: official.date,
+        gameDate: official.date || new Date().toISOString(),
         location: gameLocation || official.location,
         createdAt: serverTimestamp(),
       };
@@ -103,10 +137,6 @@ const EvaluationReviewContent = () => {
       setIsSubmitting(false);
     }
   };
-
-  const ratingValues = Object.values(ratings).filter(Boolean);
-  const totalScore = ratingValues.reduce((acc, val) => acc + val, 0);
-  const maxScore = CATEGORY_LIST.length * 5;
 
   const renderStars = (rating) => (
     <div className='flex items-center gap-[6px]'>
@@ -161,22 +191,70 @@ const EvaluationReviewContent = () => {
             </div>
 
             <div className='mb-6 lg:mb-8'>
-              <div className='bg-white rounded-[20px] px-6 py-5 lg:px-7 lg:py-6 flex items-center justify-between shadow-sm'>
-                <div>
-                  <div className='text-[13px] lg:text-[14px] text-[#6b7280] text-body mb-1 font-medium'>
-                    Total Score
+              <div className='bg-white rounded-[20px] px-6 py-5 lg:px-7 lg:py-6 flex flex-col gap-4 shadow-sm'>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className='text-[13px] lg:text-[14px] text-[#6b7280] text-body mb-1 font-medium'>
+                      Total Score
+                    </div>
+                    <div className='text-[32px] lg:text-[36px] font-bold text-accent heading'>
+                      {totalScore}
+                      <span className='text-[24px] lg:text-[28px] text-[#9ca3af]'>
+                        /{maxScore}
+                      </span>
+                    </div>
                   </div>
-                  <div className='text-[32px] lg:text-[36px] font-bold text-accent heading'>
-                    {totalScore}
-                    <span className='text-[24px] lg:text-[28px] text-[#9ca3af]'>
-                      /{maxScore}
-                    </span>
-                  </div>
-                </div>
 
-                <div className='bg-[#2a2a2a] text-white text-[14px] lg:text-[15px] font-semibold px-5 py-2.5 rounded-full text-body whitespace-nowrap'>
-                  {official.tier}
+                  <div className='text-right'>
+                    <div className='text-[13px] lg:text-[14px] text-[#6b7280] text-body mb-1 font-medium'>
+                      Projected Tier
+                    </div>
+                    <div className='bg-[#2a2a2a] text-white text-[18px] lg:text-[20px] font-bold px-5 py-2 rounded-full text-body whitespace-nowrap inline-block'>
+                      Tier {currentTier.tier}
+                    </div>
+                  </div>
                 </div>
+                
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-gray-700 text-sm italic">
+                    "{currentTier.desc}"
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tier Reference Table */}
+            <div className='mb-8 lg:mb-10'>
+              <div className='bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a]'>
+                 <div className="px-6 py-4 border-b border-[#3a3a3a]">
+                    <h3 className="text-white font-semibold">Chapter Tier Ranking System</h3>
+                 </div>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left text-sm text-gray-400">
+                     <thead className="bg-[#333] text-gray-200 uppercase font-medium">
+                       <tr>
+                         <th className="px-6 py-3">Tier</th>
+                         <th className="px-6 py-3">Score</th>
+                         <th className="px-6 py-3">Description</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-[#3a3a3a]">
+                       {TIER_DATA.map((tier) => (
+                         <tr key={tier.tier} className={currentTier.tier === tier.tier ? 'bg-accent/10' : ''}>
+                           <td className={`px-6 py-4 font-bold ${currentTier.tier === tier.tier ? 'text-accent' : 'text-white'}`}>
+                             {tier.tier}
+                           </td>
+                           <td className="px-6 py-4 text-white whitespace-nowrap">
+                             {tier.range[0]} - {tier.range[1]}
+                           </td>
+                           <td className="px-6 py-4 text-gray-300">
+                             {tier.desc}
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
               </div>
             </div>
 
@@ -237,24 +315,20 @@ const EvaluationReviewContent = () => {
               </div>
             </div>
 
-            <div className='mt-8 lg:mt-10'>
+            <div className='mt-8 lg:mt-10 flex gap-4'>
+              <button
+                onClick={handleEdit}
+                className='flex-1 bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white rounded-[15px] py-4 lg:py-[18px] text-center transition-all text-[16px] lg:text-[17px] font-semibold'
+              >
+                Edit Evaluation
+              </button>
+              
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className='w-full bg-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed rounded-[15px] py-4 lg:py-[18px] text-center transition-all active:scale-[0.98] shadow-lg'
+                className='flex-1 bg-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed rounded-[15px] py-4 lg:py-[18px] text-center transition-all active:scale-[0.98] shadow-lg text-[18px] lg:text-[19px] font-bold text-white heading'
               >
-                {isSubmitting ? (
-                  <div className='flex items-center justify-center gap-3'>
-                    <div className='w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin' />
-                    <div className='text-[18px] lg:text-[19px] font-bold text-white heading'>
-                      Submitting...
-                    </div>
-                  </div>
-                ) : (
-                  <div className='text-[18px] lg:text-[19px] font-bold text-white heading'>
-                    Submit Evaluation
-                  </div>
-                )}
+                {isSubmitting ? 'Submitting...' : 'Submit Evaluation'}
               </button>
             </div>
           </div>
