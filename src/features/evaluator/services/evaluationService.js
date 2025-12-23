@@ -1,6 +1,9 @@
 import { db } from '@/services/firebase/config';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
+/**
+ * Fetches a single evaluation by ID with referee and evaluator details
+ */
 export const getEvaluationById = async (evaluationId) => {
   try {
     const docRef = doc(db, 'evaluations', evaluationId);
@@ -41,8 +44,19 @@ export const getEvaluationById = async (evaluationId) => {
         ...data,
         referee,
         evaluator,
-        date: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-        time: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
+        gameDateFormatted: data.gameDate 
+            ? new Date(data.gameDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : '',
+        gameTimeFormatted: data.gameDate
+            ? new Date(data.gameDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+            : '',
+        location: data.location || 'Unknown Location',
+        date: data.createdAt?.toDate 
+          ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) 
+          : '',
+        time: data.createdAt?.toDate 
+          ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) 
+          : '',
       };
     } else {
       return null;
@@ -53,18 +67,22 @@ export const getEvaluationById = async (evaluationId) => {
   }
 };
 
+/**
+ * Fetches all evaluations for a specific evaluator
+ */
 export const getEvaluationsByEvaluator = async (evaluatorId) => {
   try {
     const q = query(
       collection(db, 'evaluations'),
       where('evaluatorId', '==', evaluatorId)
     );
+    
     const querySnapshot = await getDocs(q);
     
-    const evaluations = await Promise.all(querySnapshot.docs.map(async (doc) => {
-      const data = doc.data();
+    // We use docSnap here to avoid shadowing the imported 'doc' function
+    const evaluations = await Promise.all(querySnapshot.docs.map(async (docSnap) => {
+      const data = docSnap.data();
       
-      // Fetch referee details for list view
       let refereeName = 'Unknown';
       if (data.refereeId) {
         try {
@@ -79,10 +97,11 @@ export const getEvaluationsByEvaluator = async (evaluatorId) => {
       }
 
       return {
-        id: doc.id,
+        id: docSnap.id,
         ...data,
         refereeName,
-        date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0), // Keep as Date object for sorting
+        // Keep as Date object for initial sorting
+        date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0), 
       };
     }));
 

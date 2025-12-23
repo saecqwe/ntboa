@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import EvaluatorHeader from '../components/EvaluatorHeader';
 export const dynamic = 'force-dynamic';
@@ -129,6 +129,20 @@ const EvaluationReviewContent = () => {
 
       await addDoc(collection(db, 'evaluations'), evaluationData);
 
+      // Update assignment status if assignmentId exists
+      if (official.assignmentId) {
+        try {
+          const assignmentRef = doc(db, 'assignments', official.assignmentId);
+          await updateDoc(assignmentRef, {
+            status: 'completed',
+            completedAt: serverTimestamp()
+          });
+        } catch (updateError) {
+          console.error("Error updating assignment status:", updateError);
+          // We don't block the success flow if this fails, but we log it
+        }
+      }
+
       alert('Evaluation submitted successfully!');
       router.push('/evaluator/home');
     } catch (error) {
@@ -217,7 +231,7 @@ const EvaluationReviewContent = () => {
                 
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-gray-700 text-sm italic">
-                    "{currentTier.desc}"
+                    &quot;{currentTier.desc}&quot;
                   </p>
                 </div>
               </div>

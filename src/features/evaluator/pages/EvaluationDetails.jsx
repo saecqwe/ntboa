@@ -103,16 +103,24 @@ const EvaluationDetailsPage = () => {
                   </span>
                 </div>
 
-                <h3 className='text-[20px] lg:text-[22px] font-semibold text-white text-body mb-1'>
+                <h3 className='text-[20px] lg:text-[22px] font-semibold text-white text-body mb-2'>
                   {evaluation.referee.name}
                 </h3>
                 
-                <p className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body'>
-                  {evaluation.date} • {evaluation.location}
-                </p>
-                 <p className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body'>
-                  Tier: {evaluation.tier || 'N/A'}
-                </p>
+                <div className='flex flex-col gap-1 mb-3'>
+                    <p className='text-[15px] text-white font-medium'>
+                      {evaluation.location}
+                    </p>
+                    <p className='text-[14px] text-[#9ca3af]'>
+                       {evaluation.gameDateFormatted} {evaluation.gameTimeFormatted && `• ${evaluation.gameTimeFormatted}`}
+                    </p>
+                </div>
+
+                 <div className='flex items-center justify-center gap-4 text-[13px] text-[#6b7280] border-t border-[#3a3a3a] pt-3 w-full'>
+                    <span>Report Date: {evaluation.date}</span>
+                    <span>•</span>
+                    <span>Tier: {evaluation.tier || 'N/A'}</span>
+                </div>
               </div>
             </div>
 

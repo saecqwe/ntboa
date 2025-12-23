@@ -480,6 +480,19 @@ const EvaluationFormContent = () => {
         </h1>
       </header>
 
+      {/* Game Info Banner */}
+      <div className='bg-[#222] border-b border-[#3a3a3a] py-3 px-6 lg:px-8'>
+        <div className='max-w-md mx-auto lg:max-w-6xl flex flex-wrap items-center justify-between gap-2'>
+           <div className='flex items-center gap-2 text-white/90 text-sm font-medium'>
+              <span className='text-accent'>📍</span> {location || officials[0]?.location || 'Unknown Location'}
+           </div>
+           <div className='flex items-center gap-4 text-white/60 text-xs'>
+              <span>📅 {officials[0]?.date ? new Date(officials[0].date).toLocaleDateString() : 'N/A'}</span>
+              <span>⏰ {officials[0]?.time || 'N/A'}</span>
+           </div>
+        </div>
+      </div>
+
       {/* Tabs Navigation */}
       {(isGroupEvaluation || officials.length > 1) && (
         <div className='bg-[#2a2a2a] border-b border-[#3a3a3a]'>

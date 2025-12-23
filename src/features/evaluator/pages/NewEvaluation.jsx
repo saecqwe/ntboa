@@ -46,14 +46,16 @@ const NewEvaluationPage = () => {
   // Fetch officials
   useEffect(() => {
     const fetchOfficials = async () => {
+      if (!user?.uid) return;
       setIsLoading(true);
-      const data = await getReferees();
+      const data = await getReferees(user.uid);
       // Map Firestore data to UI structure
       const mappedOfficials = data.map((ref) => ({
         id: ref.id,
         name: ref.displayName || ref.name || 'Unknown Official',
         tier: ref.tier || 'N/A',
         // Use nextAssignment if available, otherwise placeholders
+        assignmentId: ref.nextAssignment?.assignmentId || null,
         location: ref.nextAssignment?.location || 'No assignment',
         date: ref.nextAssignment?.dateTime || new Date().toISOString(),
         time: ref.nextAssignment?.dateTime
@@ -64,7 +66,7 @@ const NewEvaluationPage = () => {
       setIsLoading(false);
     };
     fetchOfficials();
-  }, []);
+  }, [user]);
 
   // Filter officials based on search query
   const filteredOfficials = officials.filter((official) =>
@@ -93,6 +95,7 @@ const NewEvaluationPage = () => {
         id: official.id,
         name: official.name,
         tier: official.tier,
+        assignmentId: official.assignmentId,
         location: official.location,
         date: official.date,
         time: official.time,

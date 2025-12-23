@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { IoBasketballOutline } from 'react-icons/io5';
+import { IoBasketballOutline, IoPlay, IoCalendar, IoTime, IoCheckmarkCircle, IoAlertCircle } from 'react-icons/io5';
 import { FaStar, FaTrophy } from 'react-icons/fa';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 import { getDashboardData } from '@/features/evaluator/services/dashboardService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const EvaluatorHome = () => {
   const { user } = useAuth();
+  const router = useRouter();
+  const [activeFilter, setActiveFilter] = useState('upcoming'); // Default to upcoming/today view
+  
   // Profile data state
   const [userData, setUserData] = useState({
     name: 'John',
@@ -19,12 +23,14 @@ const EvaluatorHome = () => {
   // Dashboard data state
   const [dashboardData, setDashboardData] = useState({
     stats: {
-      totalEvaluations: 0,
-      averageRating: 0,
-      topTierOfficials: 0,
+      assignmentsToday: 0,
+      assignmentsUpcoming: 0,
+      assignmentsDoneThisWeek: 0,
+      assignmentsMissed: 0,
     },
     recentEvaluations: [],
-    quickOverview: { thisMonth: 0, thisWeek: 0, pendingReviews: 0, completionRate: '0%' },
+    relevantAssignments: [],
+    quickOverview: { thisMonth: 0, completionRate: '0%' },
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -82,28 +88,103 @@ const EvaluatorHome = () => {
   const statsCards = [
     {
       id: 1,
-      icon: IoBasketballOutline,
-      iconSize: 'w-11 h-11 lg:w-12 lg:h-12',
-      label: 'Total\nEvaluations',
-      value: dashboardData.stats.totalEvaluations,
+      filterKey: 'today',
+      icon: IoCalendar,
+      label: 'Today',
+      value: dashboardData.stats.assignmentsToday,
+      gradient: 'from-blue-500 to-blue-600',
+      shadow: 'shadow-blue-500/20',
+      border: 'border-blue-400/30'
     },
     {
       id: 2,
-      icon: FaStar,
-      iconSize: 'w-10 h-10 lg:w-11 lg:h-11',
-      label: 'Average\nRating',
-      value: dashboardData.stats.averageRating,
+      filterKey: 'upcoming',
+      icon: IoTime,
+      label: 'Upcoming',
+      value: dashboardData.stats.assignmentsUpcoming,
+      gradient: 'from-violet-500 to-violet-600',
+      shadow: 'shadow-violet-500/20',
+      border: 'border-violet-400/30'
     },
     {
       id: 3,
-      icon: FaTrophy,
-      iconSize: 'w-10 h-10 lg:w-11 lg:h-11',
-      label: 'Top Tier\nOfficials',
-      value: dashboardData.stats.topTierOfficials,
+      filterKey: 'done',
+      icon: IoCheckmarkCircle,
+      label: 'Done (Week)',
+      value: dashboardData.stats.assignmentsDoneThisWeek,
+      gradient: 'from-emerald-500 to-emerald-600',
+      shadow: 'shadow-emerald-500/20',
+      border: 'border-emerald-400/30'
+    },
+    {
+      id: 4,
+      filterKey: 'missed',
+      icon: IoAlertCircle,
+      label: 'Missed',
+      value: dashboardData.stats.assignmentsMissed,
+      gradient: 'from-rose-500 to-rose-600',
+      shadow: 'shadow-rose-500/20',
+      border: 'border-rose-400/30'
     },
   ];
 
+  const getFilteredAssignments = () => {
+    if (!dashboardData.relevantAssignments) return [];
+    
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    return dashboardData.relevantAssignments.filter(asgn => {
+       const date = new Date(asgn.rawDate);
+       
+       switch(activeFilter) {
+           case 'today':
+               return date >= todayStart && date <= todayEnd && asgn.status !== 'completed';
+           case 'upcoming':
+               // "Upcoming" usually implies future, but practically users want to see everything coming up including today.
+               // But strictly separating them:
+               return date > todayEnd && asgn.status !== 'completed';
+           case 'done':
+               return asgn.status === 'completed';
+           case 'missed':
+               return asgn.isMissed;
+           default:
+               return true;
+       }
+    });
+  };
+
+  const filteredAssignments = getFilteredAssignments();
+
   const recentEvaluations = dashboardData.recentEvaluations;
+
+  const handleStartEvaluation = (assignment) => {
+    const officials = assignment.refereeDetails.map(ref => ({
+        id: ref.id,
+        name: ref.name,
+        tier: ref.tier,
+        assignmentId: assignment.id,
+        location: assignment.location,
+        date: assignment.rawDate,
+        time: assignment.time
+    }));
+    
+    // Determine if this should be a group evaluation
+    // If more than 1 official, it is always a group evaluation
+    const isGroup = officials.length > 1;
+    
+    // If location is present in assignment, skip GameContext
+    if (assignment.location) {
+        const url = `/evaluator/evaluation-form?officials=${encodeURIComponent(JSON.stringify(officials))}&isGroup=${isGroup}&location=${encodeURIComponent(assignment.location)}`;
+        router.push(url);
+    } else {
+        const url = `/evaluator/game-context?officials=${encodeURIComponent(JSON.stringify(officials))}&isGroup=${isGroup}`;
+        router.push(url);
+    }
+  };
 
   return (
     <div className='min-h-screen bg-[#181818] flex flex-col bg-gradient-secondary'>
@@ -131,27 +212,38 @@ const EvaluatorHome = () => {
               <div className='lg:grid lg:grid-cols-12 lg:gap-8'>
                 {/* Main Content Area */}
                 <div className='lg:col-span-8'>
-                  {/* Stats Cards - 3 Column Grid */}
-                  <div className='grid grid-cols-3 gap-3 mb-6 lg:gap-5 lg:mb-8'>
+                  {/* Stats Cards - Interactive Filters */}
+                  <div className='grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 lg:gap-4 lg:mb-8'>
                     {statsCards.map((card) => {
                       const IconComponent = card.icon;
+                      const isActive = activeFilter === card.filterKey;
+                      
                       return (
-                        <div
+                        <button
                           key={card.id}
-                          className='bg-[#FFFFFF]/6 rounded-[20px] p-4 lg:p-6 flex flex-col items-center justify-center border border-[#FFFFFF]/20'
+                          onClick={() => setActiveFilter(isActive ? 'all' : card.filterKey)}
+                          className={`relative overflow-hidden rounded-[24px] p-5 flex flex-col items-start justify-between min-h-[140px] transition-all duration-300 border ${isActive ? `ring-2 ring-white/50 scale-[1.02] ${card.border}` : 'border-[#FFFFFF]/10 hover:border-[#FFFFFF]/30 hover:-translate-y-1'}`}
                         >
-                          <div className='w-12 h-12 lg:w-14 lg:h-14 mb-3 lg:mb-4 flex items-center justify-center'>
-                            <IconComponent
-                              className={`${card.iconSize} text-white`}
-                            />
+                          {/* Background Gradient */}
+                          <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} ${isActive ? 'opacity-100' : 'opacity-10'} transition-opacity duration-300`} />
+                          
+                          {/* Content */}
+                          <div className="relative z-10 w-full flex justify-between items-start">
+                             <div className={`p-2.5 rounded-2xl ${isActive ? 'bg-white/20 text-white' : 'bg-[#FFFFFF]/10 text-gray-400'} backdrop-blur-sm transition-colors`}>
+                                <IconComponent className="w-6 h-6" />
+                             </div>
+                             {isActive && <div className="w-2 h-2 rounded-full bg-white animate-pulse" />}
                           </div>
-                          <div className='text-[11px] lg:text-[13px] text-[#9ca3af] text-center mb-2 text-body leading-tight whitespace-pre-line'>
-                            {card.label}
+                          
+                          <div className="relative z-10 mt-auto">
+                            <div className={`text-[32px] font-bold leading-none mb-1 ${isActive ? 'text-white' : 'text-white'}`}>
+                                {card.value}
+                            </div>
+                            <div className={`text-[13px] font-medium tracking-wide ${isActive ? 'text-white/90' : 'text-[#9ca3af]'}`}>
+                                {card.label}
+                            </div>
                           </div>
-                          <div className='text-[28px] lg:text-[36px] font-bold text-white heading leading-none'>
-                            {card.value}
-                          </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -168,6 +260,61 @@ const EvaluatorHome = () => {
                       Tap to evaluate an official in seconds
                     </div>
                   </Link>
+
+                  {/* Pending Assignments Section */}
+                  <div className='mb-8'>
+                    <div className='flex items-center justify-between mb-4 lg:mb-5'>
+                      <h3 className='text-[20px] lg:text-[24px] font-bold text-white heading'>
+                        Your Assignments
+                      </h3>
+                    </div>
+
+                    <div className='space-y-3 lg:space-y-3'>
+                      {filteredAssignments && filteredAssignments.length > 0 ? (
+                        filteredAssignments.map((assignment) => (
+                          <div
+                            key={assignment.id}
+                            className={`bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex flex-col border transition-all ${assignment.isMissed ? 'border-red-500/30' : 'border-[#FFFFFF]/20'}`}
+                          >
+                             <div className='flex justify-between items-start mb-2'>
+                                <div className='flex items-center gap-2'>
+                                    <div className='text-[16px] font-semibold text-white heading'>
+                                    {assignment.location}
+                                    </div>
+                                    {assignment.isMissed && (
+                                        <span className='bg-red-500/20 text-red-500 text-[10px] px-2 py-0.5 rounded font-bold uppercase'>
+                                            Missed
+                                        </span>
+                                    )}
+                                </div>
+                                <div className='text-[13px] text-accent bg-accent/10 px-2 py-1 rounded-lg border border-accent/20'>
+                                   {assignment.time}
+                                </div>
+                             </div>
+                             <div className='flex justify-between items-center mb-3'>
+                                <div className='text-[14px] text-[#9ca3af] text-body'>
+                                   {assignment.date}
+                                </div>
+                                <div className='text-[13px] text-white/80 text-body truncate max-w-[50%] text-right'>
+                                   {assignment.refereeDetails.map(r => r.name).join(', ')}
+                                </div>
+                             </div>
+                             
+                             <button 
+                                onClick={() => handleStartEvaluation(assignment)}
+                                className='w-full bg-accent/20 hover:bg-accent hover:text-white text-accent border border-accent/50 rounded-xl py-2 flex items-center justify-center gap-2 transition-all font-semibold text-sm'
+                             >
+                                <IoPlay /> Start Evaluation
+                             </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className='text-center py-8 text-gray-500 bg-[#FFFFFF]/6 rounded-[20px] border border-[#FFFFFF]/20'>
+                          No pending assignments
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Recent Evaluations Section */}
                   <div>
@@ -249,26 +396,26 @@ const EvaluatorHome = () => {
                       <div className='space-y-3'>
                         <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
                           <div className='text-[#9ca3af] text-body text-[14px]'>
-                            This Month
+                            Assignments This Week
                           </div>
                           <div className='text-white font-bold heading text-[16px]'>
-                            {dashboardData.quickOverview.thisMonth}
+                            {dashboardData.quickOverview.assignmentsThisWeek}
                           </div>
                         </div>
                         <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
                           <div className='text-[#9ca3af] text-body text-[14px]'>
-                            This Week
-                          </div>
-                          <div className='text-white font-bold heading text-[16px]'>
-                            {dashboardData.quickOverview.thisWeek}
-                          </div>
-                        </div>
-                        <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
-                          <div className='text-[#9ca3af] text-body text-[14px]'>
-                            Pending Reviews
+                            Completed (Done)
                           </div>
                           <div className='text-accent font-bold heading text-[16px]'>
-                            {dashboardData.quickOverview.pendingReviews}
+                            {dashboardData.quickOverview.assignmentsDone}
+                          </div>
+                        </div>
+                        <div className='flex justify-between items-center pb-3 border-b border-[#FFFFFF]/10'>
+                          <div className='text-[#9ca3af] text-body text-[14px]'>
+                            Missed (Late &gt; 60m)
+                          </div>
+                          <div className='text-red-500 font-bold heading text-[16px]'>
+                            {dashboardData.quickOverview.assignmentsMissed}
                           </div>
                         </div>
                         <div className='flex justify-between items-center'>
