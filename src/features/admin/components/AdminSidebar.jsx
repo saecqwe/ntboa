@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { getAuth, signOut } from 'firebase/auth';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import {
   HiOutlineHome,
@@ -76,9 +77,15 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
     if (typeof onClose === 'function') onClose();
   };
 
-  const handleLogout = () => {
-    console.log('Logging out...');
-    router.push('/admin/login');
+  const handleLogout = async () => {
+    try {
+      const auth = getAuth();
+      await signOut(auth);
+      localStorage.removeItem('ntboa_admin_profile');
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   return (
