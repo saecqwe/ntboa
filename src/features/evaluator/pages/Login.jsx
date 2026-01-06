@@ -87,7 +87,7 @@ const LoginPage = () => {
               NTBOA
             </h2>
             <h3 className='text-xl font-medium heading text-foreground text-center mb-8'>
-              Sign in to your Evaluator Account
+              Evaluator Login
             </h3>
 
             <form onSubmit={handleSubmit} className='space-y-4'>

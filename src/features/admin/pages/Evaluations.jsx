@@ -9,6 +9,41 @@ import BackButton from '@/ui/BackButton';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
+const scoreCategories = [
+  { label: 'Court Presence', key: 'courtPresence', max: 5 },
+  { label: 'Communication', key: 'communication', max: 5 },
+  { label: 'Game Management', key: 'gameManagement', max: 5 },
+  { label: 'Rules Knowledge', key: 'rulesKnowledge', max: 5 },
+  { label: 'Physical Fitness', key: 'physicalFitness', max: 5 },
+  { label: 'Professionalism', key: 'professionalism', max: 5 },
+];
+
+const getScoreColor = (score, max) => {
+  if (!score) return 'text-gray-400';
+  const percentage = (score / max) * 100;
+  if (percentage >= 85) return 'text-[#22c55e]'; // Green
+  if (percentage >= 70) return 'text-[#eab308]'; // Yellow
+  return 'text-[#ef4444]'; // Red
+};
+
+const getScoreBackground = (score, max) => {
+  if (!score) return 'bg-[#2a2a2a]';
+  const percentage = (score / max) * 100;
+  if (percentage >= 85) return 'bg-[#22c55e]/10 border-[#22c55e]/20';
+  if (percentage >= 70) return 'bg-[#eab308]/10 border-[#eab308]/20';
+  return 'bg-[#ef4444]/10 border-[#ef4444]/20';
+};
+
+const getTierColor = (tier) => {
+  switch (tier) {
+    case 'Tier 100': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20';
+    case 'Tier 150': return 'bg-green-500/10 text-green-400 border border-green-500/20';
+    case 'Tier 200': return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+    case 'Tier 250': return 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
+    default: return 'bg-gray-500/10 text-gray-400 border border-gray-500/20';
+  }
+};
+
 const EvaluationsPage = () => {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -77,6 +112,7 @@ const EvaluationsPage = () => {
             refereeName: refereeDoc.data()?.displayName || 'Unknown',
             evaluatorName: evaluatorDoc.data()?.displayName || 'Unknown',
             tier: refereeDoc.data()?.tier || 'N/A',
+            tierColor: getTierColor(refereeDoc.data()?.tier || 'N/A'),
           };
         })
       );
@@ -269,9 +305,8 @@ const EvaluationsPage = () => {
                     {selectedTier}
                   </span>
                   <HiChevronDown
-                    className={`w-5 h-5 text-white transition-transform duration-300 ${
-                      showTierDropdown ? 'rotate-180' : ''
-                    }`}
+                    className={`w-5 h-5 text-white transition-transform duration-300 ${showTierDropdown ? 'rotate-180' : ''
+                      }`}
                   />
                 </button>
 
@@ -281,11 +316,10 @@ const EvaluationsPage = () => {
                       <button
                         key={tier}
                         onClick={() => handleTierSelect(tier)}
-                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${
-                          selectedTier === tier
-                            ? 'bg-accent/20 text-white border-l-4 border-accent'
-                            : 'text-white hover:bg-[#3a3a3a]'
-                        }`}
+                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTier === tier
+                          ? 'bg-accent/20 text-white border-l-4 border-accent'
+                          : 'text-white hover:bg-[#3a3a3a]'
+                          }`}
                       >
                         <span>{tier}</span>
                         {selectedTier === tier && (
@@ -308,9 +342,8 @@ const EvaluationsPage = () => {
                     {selectedTime}
                   </span>
                   <HiChevronDown
-                    className={`w-5 h-5 text-white transition-transform duration-300 ${
-                      showTimeDropdown ? 'rotate-180' : ''
-                    }`}
+                    className={`w-5 h-5 text-white transition-transform duration-300 ${showTimeDropdown ? 'rotate-180' : ''
+                      }`}
                   />
                 </button>
 
@@ -320,11 +353,10 @@ const EvaluationsPage = () => {
                       <button
                         key={time}
                         onClick={() => handleTimeSelect(time)}
-                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${
-                          selectedTime === time
-                            ? 'bg-accent/20 text-white border-l-4 border-accent'
-                            : 'text-white hover:bg-[#3a3a3a]'
-                        }`}
+                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTime === time
+                          ? 'bg-accent/20 text-white border-l-4 border-accent'
+                          : 'text-white hover:bg-[#3a3a3a]'
+                          }`}
                       >
                         <span>{time}</span>
                         {selectedTime === time && (
@@ -365,46 +397,56 @@ const EvaluationsPage = () => {
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr>
+                      <tr key="loading">
                         <td colSpan='6' className='text-center py-12'>
                           <p className='text-[15px] text-[#6b7280] text-body'>
                             Loading evaluations...
                           </p>
                         </td>
                       </tr>
-                    ) : filteredEvaluations.map((evaluation) => (
-                      <tr
-                        key={evaluation.id}
-                        onClick={() => handleViewEvaluation(evaluation)}
-                        className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
-                      >
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {new Date(evaluation.createdAt.seconds * 1000).toLocaleDateString()}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {evaluation.evaluatorName}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body'>
-                          <div className='font-medium'>{evaluation.refereeName}</div>
-                          <div className='text-[12px] text-[#6b7280]'>{evaluation.game}</div>
-                        </td>
-                        <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                          {evaluation.totalScore}
-                        </td>
-                        <td className='py-4 px-4 lg:px-6'>
-                          <span
-                            className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${evaluation.tierColor}`}
-                          >
-                            {evaluation.tier}
-                          </span>
-                        </td>
-                        <td className='py-4 px-4 lg:px-6'>
-                          <span className='text-fluid-base text-[#ef4444] font-medium'>
-                            View More
-                          </span>
+                    ) : filteredEvaluations.length > 0 ? (
+                      filteredEvaluations.map((evaluation) => (
+                        <tr
+                          key={evaluation.id}
+                          onClick={() => handleViewEvaluation(evaluation)}
+                          className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
+                        >
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {new Date(evaluation.createdAt.seconds * 1000).toLocaleDateString()}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {evaluation.evaluatorName}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body'>
+                            <div className='font-medium'>{evaluation.refereeName}</div>
+                            <div className='text-[12px] text-[#6b7280]'>{evaluation.game}</div>
+                          </td>
+                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                            {evaluation.totalScore}
+                          </td>
+                          <td className='py-4 px-4 lg:px-6'>
+                            <span
+                              className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${evaluation.tierColor}`}
+                            >
+                              {evaluation.tier}
+                            </span>
+                          </td>
+                          <td className='py-4 px-4 lg:px-6'>
+                            <span className='text-fluid-base text-[#ef4444] font-medium'>
+                              View More
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr key="no-results">
+                        <td colSpan='6' className='text-center py-12'>
+                          <p className='text-[15px] text-[#6b7280] text-body'>
+                            No evaluations found.
+                          </p>
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -463,29 +505,32 @@ const EvaluationsPage = () => {
                 Category Scores
               </h3>
 
-              <div className='grid grid-cols-1 md:grid-cols-2 gap-4 mb-6'>
-                {Object.entries(selectedEvaluation.scores).map(([category, score]) => (
-                  <div
-                    key={category}
-                    className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'
-                  >
-                    <div className='flex items-center justify-between mb-2'>
-                      <span className='text-fluid-base text-white text-body capitalize'>
-                        {category.replace(/([A-Z])/g, ' $1')}
-                      </span>
-                      <span className='text-fluid-base font-semibold text-white text-body'>
-                        {score}/5
-                      </span>
+              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6'>
+                {scoreCategories.map((category) => {
+                  const score = selectedEvaluation.scores?.[category.key] || 0;
+                  return (
+                    <div
+                      key={category.key}
+                      className={`rounded-lg p-4 border ${getScoreBackground(score, category.max)}`}
+                    >
+                      <div className='flex items-center justify-between mb-2'>
+                        <span className='text-fluid-base text-white text-body'>
+                          {category.label}
+                        </span>
+                        <span className={`text-fluid-lg font-bold ${getScoreColor(score, category.max)}`}>
+                          {score}/{category.max}
+                        </span>
+                      </div>
+                      {/* Progress Bar */}
+                      <div className='w-full bg-[#1a1a1a] rounded-full h-2 overflow-hidden'>
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${score > 0 ? getScoreColor(score, category.max).replace('text-', 'bg-') : 'bg-transparent'}`}
+                          style={{ width: `${(score / category.max) * 100}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    {/* Progress Bar */}
-                    <div className='w-full bg-[#4a4a4a] rounded-full h-2 overflow-hidden'>
-                      <div
-                        className='bg-accent h-full rounded-full transition-all duration-300'
-                        style={{ width: `${(score / 5) * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Summary Section */}
@@ -497,7 +542,7 @@ const EvaluationsPage = () => {
                       Total Score
                     </div>
                     <div className='text-fluid-4xl font-bold text-white heading'>
-                      {selectedEvaluation.totalScore}/40
+                      {selectedEvaluation.totalScore}/{scoreCategories.reduce((acc, cat) => acc + cat.max, 0)}
                     </div>
                   </div>
 
@@ -544,13 +589,20 @@ const EvaluationsPage = () => {
                 ))}
               </div>
 
-              {/* Close Button */}
-              <button
-                onClick={handleCloseModal}
-                className='w-full bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg'
-              >
-                Close
-              </button>
+              <div className='flex gap-3'>
+                <button
+                  onClick={handleCloseModal}
+                  className='flex-1 bg-[#2a2a2a] hover:bg-[#333333] border border-[#3a3a3a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-lg'
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => router.push(`/admin/evaluations/${selectedEvaluation.id}`)}
+                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg'
+                >
+                  View Full Details
+                </button>
+              </div>
             </div>
           </div>
         </div>

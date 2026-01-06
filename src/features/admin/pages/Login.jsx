@@ -66,7 +66,7 @@ const AdminLoginPage = () => {
 
         {/* Subtitle */}
         <h2 className='text-center text-fluid-xl font-semibold text-white heading mb-8 lg:mb-10'>
-          Official Evaluator Login
+          Admin Login
         </h2>
 
         {/* Login Form */}

@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, limit, orderBy, getDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiOutlineUsers, HiOutlineDocumentText, HiMenu } from 'react-icons/hi';
+import { HiOutlineUsers, HiOutlineDocumentText, HiMenu, HiOutlineSearch } from 'react-icons/hi';
 import { HiStar } from 'react-icons/hi2';
 import { FaTrophy } from 'react-icons/fa';
 import {
@@ -18,17 +20,14 @@ import {
   Tooltip,
 } from 'recharts';
 
-const CHART_DATA = [
-  { week: 'Week 1', evaluations: 5 },
-  { week: 'Week 2', evaluations: 8 },
-  { week: 'Week 3', evaluations: 12 },
-  { week: 'Week 4', evaluations: 7 },
-  { week: 'Week 5', evaluations: 15 },
-  { week: 'Week 6', evaluations: 10 },
-];
+
 
 const AdminDashboardPage = () => {
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [allEvaluations, setAllEvaluations] = useState([]);
+  const [chartData, setChartData] = useState([]);
   const [stats, setStats] = useState([
     {
       id: 1,
@@ -37,14 +36,16 @@ const AdminDashboardPage = () => {
       icon: HiOutlineUsers,
       bgClass: 'bg-[#e0f2fe]',
       iconClass: 'text-[#0ea5e9]',
+      link: '/admin/referees',
     },
     {
       id: 2,
-      title: 'Total Evaluations',
+      title: 'Evaluations This Week',
       value: '0',
       icon: HiOutlineDocumentText,
       bgClass: 'bg-[#dbeafe]',
       iconClass: 'text-[#3b82f6]',
+      link: '/admin/evaluations',
     },
     {
       id: 3,
@@ -54,6 +55,7 @@ const AdminDashboardPage = () => {
       icon: HiStar,
       bgClass: 'bg-[#fef3c7]',
       iconClass: 'text-[#f59e0b]',
+      link: '/admin/evaluators',
     },
     {
       id: 4,
@@ -64,86 +66,139 @@ const AdminDashboardPage = () => {
       list: [],
     },
   ]);
-  const [recentEvaluations, setRecentEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      // Fetch referees
-      const refereesQuery = query(collection(db, 'users'), where('role', '==', 'referee'));
-      const refereesSnapshot = await getDocs(refereesQuery);
-      const refereesCount = refereesSnapshot.size;
-      const topReferees = refereesSnapshot.docs.slice(0, 3).map(doc => doc.data().displayName);
+      try {
+        // 1. Fetch All Users to build a lookup map
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const userMap = {};
+        const referees = [];
+        usersSnapshot.forEach((doc) => {
+          const data = doc.data();
+          userMap[doc.id] = data;
+          if (data.role === 'referee') {
+            referees.push(data);
+          }
+        });
 
-      // Fetch evaluations
-      const evaluationsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
-      const evaluationsSnapshot = await getDocs(evaluationsQuery);
-      const evaluationsCount = evaluationsSnapshot.size;
-      const evaluationsData = evaluationsSnapshot.docs.map(doc => doc.data());
+        const refereesCount = referees.length;
+        // Logic for top tier: simply taking the first 3 referees found for now
+        const topReferees = referees.slice(0, 3).map((r) => r.displayName || 'Unknown');
 
-      // Calculate average score
-      const totalScore = evaluationsData.reduce((acc, cur) => acc + cur.totalScore, 0);
-      const averageScore = evaluationsCount > 0 ? (totalScore / evaluationsCount).toFixed(1) : 0;
+        // 2. Fetch All Evaluations
+        const evaluationsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
+        const evaluationsSnapshot = await getDocs(evaluationsQuery);
 
-      // Set stats
-      setStats([
-        {
-          id: 1,
-          title: 'Total Officials',
-          value: refereesCount.toString(),
-          icon: HiOutlineUsers,
-          bgClass: 'bg-[#e0f2fe]',
-          iconClass: 'text-[#0ea5e9]',
-        },
-        {
-          id: 2,
-          title: 'Total Evaluations',
-          value: evaluationsCount.toString(),
-          icon: HiOutlineDocumentText,
-          bgClass: 'bg-[#dbeafe]',
-          iconClass: 'text-[#3b82f6]',
-        },
-        {
-          id: 3,
-          title: 'Average Rating',
-          value: averageScore.toString(),
-          suffix: '/40',
-          icon: HiStar,
-          bgClass: 'bg-[#fef3c7]',
-          iconClass: 'text-[#f59e0b]',
-        },
-        {
-          id: 4,
-          title: 'Top Tier Officials',
-          icon: FaTrophy,
-          bgClass: 'bg-[#e9d5ff]',
-          iconClass: 'text-[#a855f7]',
-          list: topReferees,
-        },
-      ]);
-
-      // Fetch recent evaluations with referee and evaluator names
-      const recentEvaluationsData = await Promise.all(
-        evaluationsSnapshot.docs.slice(0, 5).map(async (doc) => {
-          const evaluation = doc.data();
-          const refereeDoc = await getDoc(doc(db, 'users', evaluation.refereeId));
-          const evaluatorDoc = await getDoc(doc(db, 'users', evaluation.evaluatorId));
+        const evaluationsData = evaluationsSnapshot.docs.map((doc) => {
+          const data = doc.data();
+          const referee = userMap[data.refereeId];
+          const evaluator = userMap[data.evaluatorId];
           return {
-            ...evaluation,
             id: doc.id,
-            refereeName: refereeDoc.data()?.displayName || 'Unknown',
-            evaluatorName: evaluatorDoc.data()?.displayName || 'Unknown',
-            tier: refereeDoc.data()?.tier || 'N/A',
+            ...data,
+            refereeName: referee?.displayName || 'Unknown',
+            evaluatorName: evaluator?.displayName || 'Unknown',
+            tier: referee?.tier || 'N/A',
+            createdAtDate: data.createdAt ? new Date(data.createdAt.seconds * 1000) : new Date(),
           };
-        })
-      );
-      setRecentEvaluations(recentEvaluationsData);
+        });
 
-      setLoading(false);
+        const evaluationsCount = evaluationsData.length;
+
+        // Calculate Average Score
+        const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
+        const averageScore = evaluationsCount > 0 ? (totalScore / evaluationsCount).toFixed(1) : '0.0';
+
+        // Calculate Evaluations This Week
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const evaluationsThisWeek = evaluationsData.filter(ev => ev.createdAtDate >= oneWeekAgo).length;
+
+        // 3. Process Chart Data (Last 7 Days)
+        const days = {};
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const key = d.toLocaleDateString('en-US', { weekday: 'short' });
+          days[key] = 0;
+        }
+
+        evaluationsData.forEach((ev) => {
+          const date = ev.createdAtDate;
+          const key = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+          if (Object.prototype.hasOwnProperty.call(days, key) && date >= oneWeekAgo) {
+            days[key]++;
+          }
+        });
+
+        const newChartData = Object.keys(days).map((day) => ({
+          day,
+          evaluations: days[day],
+        }));
+
+        setAllEvaluations(evaluationsData);
+        setChartData(newChartData);
+
+        setStats([
+          {
+            id: 1,
+            title: 'Total Officials',
+            value: refereesCount.toString(),
+            icon: HiOutlineUsers,
+            bgClass: 'bg-[#e0f2fe]',
+            iconClass: 'text-[#0ea5e9]',
+            link: '/admin/referees',
+          },
+          {
+            id: 2,
+            title: 'Evaluations This Week',
+            value: evaluationsThisWeek.toString(),
+            icon: HiOutlineDocumentText,
+            bgClass: 'bg-[#dbeafe]',
+            iconClass: 'text-[#3b82f6]',
+            link: '/admin/evaluations',
+          },
+          {
+            id: 3,
+            title: 'Average Rating',
+            value: averageScore.toString(),
+            suffix: '/40',
+            icon: HiStar,
+            bgClass: 'bg-[#fef3c7]',
+            iconClass: 'text-[#f59e0b]',
+            link: '/admin/evaluators',
+          },
+          {
+            id: 4,
+            title: 'Top Tier Officials',
+            icon: FaTrophy,
+            bgClass: 'bg-[#e9d5ff]',
+            iconClass: 'text-[#a855f7]',
+            list: topReferees,
+          },
+        ]);
+
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        setLoading(false);
+      }
     };
 
     fetchData();
   }, []);
+
+  // Filter evaluations based on search term
+  const filteredEvaluations = allEvaluations
+    .filter((ev) =>
+      ev.refereeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ev.evaluatorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ev.tier.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .slice(0, 10); // Show top 10 recent matching results
 
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
@@ -175,50 +230,75 @@ const AdminDashboardPage = () => {
         <div className='p-4 lg:p-8'>
           <div className='max-w-7xl mx-auto'>
             <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-6 lg:mb-8'>
-              {stats.map(({ id, title, value, suffix, icon: Icon, bgClass, iconClass, list }) => (
-                <div
-                  key={id}
-                  className='bg-[#2a2a2a] rounded-[20px] p-6 border-t-4 border-accent'
-                >
-                  <div
-                    className={`w-14 h-14 ${bgClass} rounded-[16px] flex items-center justify-center mb-4`}
-                  >
-                    <Icon className={`w-7 h-7 ${iconClass}`} />
-                  </div>
-
-                  <div className='text-fluid-base text-[#9ca3af] text-body mb-2 font-medium'>
-                    {title}
-                  </div>
-
-                  {list ? (
-                    <ul className='space-y-1.5'>
-                      {list.map((name, index) => (
-                        <li
-                          key={index}
-                          className='text-fluid-base text-white text-body flex items-center gap-2'
-                        >
-                          <span className='w-1.5 h-1.5 bg-white rounded-full' />
-                          {name}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className='text-fluid-4xl font-bold text-white heading'>
-                      {value}
-                      {suffix && <span className='text-fluid-2xl text-[#6b7280]'>{suffix}</span>}
+              {stats.map(({ id, title, value, suffix, icon: Icon, bgClass, iconClass, list, link }) => {
+                const CardContent = (
+                  <div className={`bg-[#2a2a2a] rounded-[20px] p-6 border-t-4 border-accent h-full ${link ? 'hover:bg-[#333333] transition-colors' : ''}`}>
+                    <div
+                      className={`w-14 h-14 ${bgClass} rounded-[16px] flex items-center justify-center mb-4`}
+                    >
+                      <Icon className={`w-7 h-7 ${iconClass}`} />
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    <div className='text-fluid-base text-[#9ca3af] text-body mb-2 font-medium'>
+                      {title}
+                    </div>
+
+                    {list ? (
+                      <ul className='space-y-1.5'>
+                        {list.map((name, index) => (
+                          <li
+                            key={index}
+                            className='text-fluid-base text-white text-body flex items-center gap-2'
+                          >
+                            <span className='w-1.5 h-1.5 bg-white rounded-full' />
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className='text-fluid-4xl font-bold text-white heading'>
+                        {value}
+                        {suffix && <span className='text-fluid-2xl text-[#6b7280]'>{suffix}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                return link ? (
+                  <Link href={link} key={id} className="block h-full">
+                    {CardContent}
+                  </Link>
+                ) : (
+                  <div key={id} className="h-full">
+                    {CardContent}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Bottom Section - Table and Chart */}
             <div className='grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6'>
               {/* Recent Evaluations Table */}
               <div className='lg:col-span-2 bg-[#2a2a2a] rounded-[20px] p-4 lg:p-6 border border-[#3a3a3a]'>
-                <h2 className='text-fluid-xl font-semibold text-white text-body mb-4 lg:mb-6'>
-                  Recent Evaluations
-                </h2>
+                <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 lg:mb-6 gap-4'>
+                  <h2 className='text-fluid-xl font-semibold text-white text-body'>
+                    Recent Evaluations
+                  </h2>
+
+                  {/* Search Input */}
+                  <div className='relative w-full sm:w-64'>
+                    <div className='absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none'>
+                      <HiOutlineSearch className='w-5 h-5 text-[#9ca3af]' />
+                    </div>
+                    <input
+                      type='text'
+                      placeholder='Search evaluations...'
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className='w-full bg-[#1a1a1a] border border-[#3a3a3a] text-white placeholder-[#6b7280] rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0ea5e9] transition-all'
+                    />
+                  </div>
+                </div>
 
                 <div className='overflow-x-auto -mx-4 lg:mx-0'>
                   <div className='inline-block min-w-full align-middle'>
@@ -252,14 +332,15 @@ const AdminDashboardPage = () => {
                                 </p>
                               </td>
                             </tr>
-                          ) : recentEvaluations.length > 0 ? (
-                            recentEvaluations.map((evaluation, index) => (
+                          ) : filteredEvaluations.length > 0 ? (
+                            filteredEvaluations.map((evaluation, index) => (
                               <tr
-                                key={index}
-                                className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
+                                key={evaluation.id || index}
+                                onClick={() => router.push(`/admin/evaluations/${evaluation.id}`)}
+                                className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
                               >
                                 <td className='py-3 lg:py-4 px-2 lg:px-4 text-fluid-base text-white text-body whitespace-nowrap'>
-                                  {new Date(evaluation.createdAt.seconds * 1000).toLocaleDateString()}
+                                  {evaluation.createdAtDate.toLocaleDateString()}
                                 </td>
                                 <td className='py-3 lg:py-4 px-2 lg:px-4 text-fluid-base text-white text-body whitespace-nowrap'>
                                   {evaluation.evaluatorName}
@@ -283,7 +364,7 @@ const AdminDashboardPage = () => {
                             <tr>
                               <td colSpan='5' className='text-center py-12'>
                                 <p className='text-[15px] text-[#6b7280] text-body'>
-                                  No recent evaluations found.
+                                  {searchTerm ? 'No evaluations found matching search.' : 'No recent evaluations found.'}
                                 </p>
                               </td>
                             </tr>
@@ -298,21 +379,22 @@ const AdminDashboardPage = () => {
               {/* Evaluations per Week Chart */}
               <div className='bg-[#2a2a2a] rounded-[20px] p-4 lg:p-6 border border-[#3a3a3a]'>
                 <h2 className='text-fluid-xl font-semibold text-white text-body mb-4 lg:mb-6'>
-                  Evaluations per Week
+                  Evaluations this Week
                 </h2>
 
                 <div className='h-[250px] lg:h-[300px]'>
                   <ResponsiveContainer width='100%' height='100%'>
-                    <LineChart data={CHART_DATA}>
+                    <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray='3 3' stroke='#3a3a3a' />
                       <XAxis
-                        dataKey='week'
+                        dataKey='day'
                         stroke='#6b7280'
                         style={{ fontSize: '12px' }}
                       />
                       <YAxis
                         stroke='#6b7280'
                         style={{ fontSize: '12px' }}
+                        allowDecimals={false}
                       />
                       <Tooltip
                         contentStyle={{

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, getDocs, orderBy } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { createUser } from '@/features/authentication/services/authService';
 import { db, functions } from '@/services/firebase/config';
@@ -33,21 +33,56 @@ const RefereesPage = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), where('role', '==', 'referee'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const refereesData = [];
-      querySnapshot.forEach((doc) => {
-        refereesData.push({ id: doc.id, ...doc.data() });
-      });
-      setReferees(refereesData);
-      setLoading(false);
-    }, (error) => {
-        console.error("Error fetching referees:", error);
-        toast.error("Failed to load referees.");
-        setLoading(false);
-    });
+    const fetchRefereesAndEvaluations = async () => {
+      try {
+        // 1. Fetch Referees (real-time listener)
+        const q = query(collection(db, 'users'), where('role', '==', 'referee'));
 
-    return () => unsubscribe();
+        const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+          const refereesList = [];
+          querySnapshot.forEach((doc) => {
+            refereesList.push({ id: doc.id, ...doc.data() });
+          });
+
+          // 2. Fetch All Evaluations (to aggregate stats)
+          // Note: In a large app, this should be done via aggregation functions or backend counters to save reads
+          const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
+          const evalsSnapshot = await getDocs(evalsQuery);
+          const allEvaluations = evalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          // 3. Merge Stats
+          const refereesWithStats = refereesList.map(referee => {
+            const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
+
+            const evalCount = refereeEvals.length;
+            const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
+            const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
+
+            // Get suggested tier from the MOST RECENT evaluation
+            const latestEval = refereeEvals[0]; // Already sorted by desc
+            const suggestedTier = latestEval?.suggestedTier || referee.suggestedTier || 'N/A';
+
+            return {
+              ...referee,
+              evaluations: evalCount, // Override Firestore field
+              avgScore: avgScore,     // Override Firestore field
+              suggestedTier: suggestedTier // Override Firestore field
+            };
+          });
+
+          setReferees(refereesWithStats);
+          setLoading(false);
+        });
+
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        toast.error("Failed to load data.");
+        setLoading(false);
+      }
+    };
+
+    fetchRefereesAndEvaluations();
   }, []);
 
   // Filter referees based on search
@@ -88,7 +123,7 @@ const RefereesPage = () => {
         formData.email,
         formData.password
       );
-      
+
       const uid = userCredential.user.uid;
 
       // 2. Update Firestore Document with specific dashboard fields
@@ -107,18 +142,18 @@ const RefereesPage = () => {
         status: 'Active',
         suggestedTier: '',
       });
-      
+
       toast.success("Referee added successfully!");
       handleCloseAddModal();
     } catch (error) {
       console.error('Error creating new referee:', error);
       if (error.code === 'auth/email-already-in-use') {
-          toast.error("Email is already in use.");
+        toast.error("Email is already in use.");
       } else {
-          toast.error("Failed to add referee: " + error.message);
+        toast.error("Failed to add referee: " + error.message);
       }
     } finally {
-        setActionLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -172,7 +207,7 @@ const RefereesPage = () => {
       console.error('Error updating referee:', error);
       toast.error("Failed to update referee.");
     } finally {
-        setActionLoading(false);
+      setActionLoading(false);
     }
   };
 
