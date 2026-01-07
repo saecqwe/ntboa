@@ -45,12 +45,17 @@ const RefereesPage = () => {
           });
 
           // 2. Fetch All Evaluations (to aggregate stats)
-          // Note: In a large app, this should be done via aggregation functions or backend counters to save reads
           const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
           const evalsSnapshot = await getDocs(evalsQuery);
           const allEvaluations = evalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-          // 3. Merge Stats
+          // 3. Fetch All Assignments (to find next game)
+          // We fetch all to avoid N+1 queries. In a huge app, we'd paginate or use cloud functions.
+          const assignmentsSnapshot = await getDocs(collection(db, 'assignments'));
+          const allAssignments = assignmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const now = new Date();
+
+          // 4. Merge Stats & Next Game
           const refereesWithStats = refereesList.map(referee => {
             const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
 
@@ -59,13 +64,35 @@ const RefereesPage = () => {
             const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
 
             // Get suggested tier: Prioritize the User Profile field (updated on submission), fallback to latest eval
+            const latestEval = refereeEvals[0];
             const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
+
+            // Find Next Assignment
+            const myAssignments = allAssignments.filter(a =>
+              a.refereeIds && a.refereeIds.includes(referee.id)
+            );
+
+            const futureAssignments = myAssignments
+              .map(a => ({
+                ...a,
+                dateObj: a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate)
+              }))
+              .filter(a => a.dateObj > now)
+              .sort((a, b) => a.dateObj - b.dateObj);
+
+            const nextGame = futureAssignments[0];
+            const nextAssignmentData = nextGame ? {
+              location: nextGame.location,
+              game: 'Scheduled Match', // Or use specific game/team names if available in assignment
+              dateTime: nextGame.dateObj.toISOString()
+            } : null;
 
             return {
               ...referee,
-              evaluations: evalCount, // Override Firestore field
-              avgScore: avgScore,     // Override Firestore field
-              suggestedTier: suggestedTier // Override Firestore field
+              evaluations: evalCount,
+              avgScore: avgScore,
+              suggestedTier: suggestedTier,
+              nextAssignment: nextAssignmentData
             };
           });
 
