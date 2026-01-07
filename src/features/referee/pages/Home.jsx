@@ -2,11 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { PiGlobeSimpleThin } from 'react-icons/pi';
+import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { db } from '@/services/firebase/config';
+import { db, auth } from '@/services/firebase/config';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 
 const RefereeDashboardPage = () => {
   const router = useRouter();
@@ -19,8 +20,18 @@ const RefereeDashboardPage = () => {
     averageDelta: '+0.0%', // Placeholder calculation
     tierProgress: 0,
     tierMin: 0,
+    tierMin: 0,
     tierMax: 500 // Example max
   });
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push('/referee/login');
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -31,21 +42,21 @@ const RefereeDashboardPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       if (!userData) {
-          // Wait for auth
-          return; 
+        // Wait for auth
+        return;
       }
-      
+
       try {
         setLoading(true);
-        
+
         // 1. Fetch Assignments for Upcoming Game
         const qAssignments = query(
-          collection(db, 'assignments'), 
+          collection(db, 'assignments'),
           where('refereeIds', 'array-contains', userData.uid)
         );
         const assignSnap = await getDocs(qAssignments);
-        const assignments = assignSnap.docs.map(d => ({id: d.id, ...d.data()}));
-        
+        const assignments = assignSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
         // Find next upcoming
         const now = new Date();
         const futureAssignments = assignments
@@ -54,21 +65,21 @@ const RefereeDashboardPage = () => {
             return d > now;
           })
           .sort((a, b) => {
-             const dA = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
-             const dB = b.scheduledDate?.toDate ? b.scheduledDate.toDate() : new Date(b.scheduledDate);
-             return dA - dB;
+            const dA = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
+            const dB = b.scheduledDate?.toDate ? b.scheduledDate.toDate() : new Date(b.scheduledDate);
+            return dA - dB;
           });
-          
+
         if (futureAssignments.length > 0) {
-            const next = futureAssignments[0];
-            const d = next.scheduledDate?.toDate ? next.scheduledDate.toDate() : new Date(next.scheduledDate);
-            setUpcomingGame({
-                date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-                location: next.location || 'TBD'
-            });
+          const next = futureAssignments[0];
+          const d = next.scheduledDate?.toDate ? next.scheduledDate.toDate() : new Date(next.scheduledDate);
+          setUpcomingGame({
+            date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            location: next.location || 'TBD'
+          });
         } else {
-            setUpcomingGame(null);
+          setUpcomingGame(null);
         }
 
         // 2. Fetch Evaluations for Stats
@@ -77,23 +88,23 @@ const RefereeDashboardPage = () => {
         const total = evalSnap.size;
         let sumScore = 0;
         evalSnap.forEach(doc => {
-            const data = doc.data();
-            // Assuming score is 0-10 or 0-100. Adjust based on your evaluation schema.
-            // If overallScore is not present, check for average of categories.
-            sumScore += (data.overallScore || data.totalScore || 0); 
+          const data = doc.data();
+          // Assuming score is 0-10 or 0-100. Adjust based on your evaluation schema.
+          // If overallScore is not present, check for average of categories.
+          sumScore += (data.overallScore || data.totalScore || 0);
         });
-        
+
         // Tier Logic (Mockup based on userData or calculated)
         // You might want to store current tier points in userData
-        const currentTierPoints = userData.tierPoints || 150; 
+        const currentTierPoints = userData.tierPoints || 150;
 
         setStats({
-            totalEvaluations: total,
-            averageScore: total > 0 ? (sumScore / total).toFixed(2) : 0,
-            averageDelta: '+1.2%', // This requires historical comparison, leaving static for now or can be 0
-            tierProgress: currentTierPoints,
-            tierMin: 100, // Example
-            tierMax: 300  // Example
+          totalEvaluations: total,
+          averageScore: total > 0 ? (sumScore / total).toFixed(2) : 0,
+          averageDelta: '+1.2%', // This requires historical comparison, leaving static for now or can be 0
+          tierProgress: currentTierPoints,
+          tierMin: 100, // Example
+          tierMax: 300  // Example
         });
 
       } catch (err) {
@@ -140,11 +151,11 @@ const RefereeDashboardPage = () => {
   ];
 
   if (authLoading || (!userData && loading)) {
-      return (
-        <div className='min-h-screen bg-[#0f0f0f] flex items-center justify-center'>
-            <div className='w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin'></div>
-        </div>
-      );
+    return (
+      <div className='min-h-screen bg-[#0f0f0f] flex items-center justify-center'>
+        <div className='w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin'></div>
+      </div>
+    );
   }
 
   // Fallback if userData is null (e.g. forced navigation without auth, though Login should prevent this)
@@ -159,6 +170,15 @@ const RefereeDashboardPage = () => {
             <div className='w-12 h-12 rounded-full bg-white/15 flex items-center justify-center'>
               <PiGlobeSimpleThin className='w-6 h-6 text-white' />
             </div>
+
+            <button
+              onClick={handleLogout}
+              className='w-12 h-12 rounded-full bg-red-500/20 hover:bg-red-500/30 flex items-center justify-center transition-all'
+              title="Logout"
+            >
+              <PiSignOut className='w-6 h-6 text-red-200' />
+            </button>
+
             <p className='text-2xl font-semibold tracking-wide heading text-white'>
               NTBOA
             </p>
@@ -193,32 +213,32 @@ const RefereeDashboardPage = () => {
         <div className='max-w-5xl mx-auto w-full space-y-4 lg:space-y-6'>
           <section className='bg-[#1b1b1b] rounded-[24px] p-5 border border-[#2b2b2b] shadow-[0px_12px_30px_rgba(0,0,0,0.35)]'>
             <div className='flex items-center justify-between mb-3'>
-                <p className='text-[#f1882a] text-[14px] heading font-semibold'>
+              <p className='text-[#f1882a] text-[14px] heading font-semibold'>
                 Upcoming Game
-                </p>
-                <Link href='/referee/schedule' className='text-xs font-medium bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-full transition-all'>
-                    View Schedule
-                </Link>
+              </p>
+              <Link href='/referee/schedule' className='text-xs font-medium bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-full transition-all'>
+                View Schedule
+              </Link>
             </div>
             {upcomingGame ? (
-                <div className='space-y-2 text-[13px] text-white/70 text-body'>
+              <div className='space-y-2 text-[13px] text-white/70 text-body'>
                 <div className='flex justify-between'>
-                    <span className='text-white/60'>Date / Time :</span>
-                    <span className='text-white font-medium'>
+                  <span className='text-white/60'>Date / Time :</span>
+                  <span className='text-white font-medium'>
                     {upcomingGame.date}, {upcomingGame.time}
-                    </span>
+                  </span>
                 </div>
                 <div className='flex justify-between gap-3'>
-                    <span className='text-white/60'>Location :</span>
-                    <span className='text-white font-medium text-right'>
+                  <span className='text-white/60'>Location :</span>
+                  <span className='text-white font-medium text-right'>
                     {upcomingGame.location}
-                    </span>
+                  </span>
                 </div>
-                </div>
+              </div>
             ) : (
-                <div className='text-[13px] text-white/50 text-center py-2'>
-                    No upcoming games scheduled.
-                </div>
+              <div className='text-[13px] text-white/50 text-center py-2'>
+                No upcoming games scheduled.
+              </div>
             )}
           </section>
 

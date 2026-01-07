@@ -83,11 +83,11 @@ const EvaluationReviewContent = () => {
     }
   }, []);
 
-  const toggleCategory = (categoryId) => {
-    if (!comments[categoryId]) return;
+  /* Toggle Category Expansion */
+  const toggleCategory = (key) => {
     setExpandedCategories((prev) => ({
       ...prev,
-      [categoryId]: !prev[categoryId],
+      [key]: !prev[key],
     }));
   };
 
@@ -188,7 +188,7 @@ const EvaluationReviewContent = () => {
       {/* Title */}
       <div className='text-center mb-4'>
         <h2 className='text-[20px] lg:text-[22px] font-semibold text-white heading'>
-          Review & Submit
+          Review & Submit ({parsedOfficials.length} Officials)
         </h2>
       </div>
 
@@ -320,8 +320,8 @@ const EvaluationReviewContent = () => {
                       {comment && (
                         <div
                           className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded
-                              ? 'max-h-[500px] opacity-100 mt-3'
-                              : 'max-h-0 opacity-0'
+                            ? 'max-h-[500px] opacity-100 mt-3'
+                            : 'max-h-0 opacity-0'
                             }`}
                         >
                           <div className='pl-4 border-l-[3px] border-[#555555]'>

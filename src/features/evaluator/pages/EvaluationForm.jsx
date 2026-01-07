@@ -76,7 +76,7 @@ const EvaluationFormContent = () => {
   const [activeRecordingId, setActiveRecordingId] = useState(null);
 
   // Group evaluation state
-  const [groupComment, setGroupComment] = useState('');
+  const [groupComment, setGroupComment] = useState(searchParams.get('groupComment') || '');
   const [isGroupRecording, setIsGroupRecording] = useState(false);
   const [groupRecordingStatus, setGroupRecordingStatus] = useState('');
 
@@ -338,9 +338,9 @@ const EvaluationFormContent = () => {
         setActiveRecordingId(null);
         alert(
           'No microphone found. Please check:\n' +
-            '1. Your microphone is connected\n' +
-            '2. Browser has permission to access it\n' +
-            '3. No other app is using the microphone'
+          '1. Your microphone is connected\n' +
+          '2. Browser has permission to access it\n' +
+          '3. No other app is using the microphone'
         );
         recognitionRef.current[recognitionKey] = null;
       } else if (event.error === 'network') {
@@ -437,28 +437,59 @@ const EvaluationFormContent = () => {
   };
 
   const handleNext = () => {
-    if (isGroupTab) {
-      alert("Group submission not implemented. Please submit from an official's tab.");
-      return;
+    // 1. Determine if we are on the last tab
+    const isLastTab = activeTab === totalTabs - 1;
+
+    // 2. Navigation Logic
+    if (!isLastTab) {
+      // Optional: Validate current tab before moving
+      // For now, we allow moving freely, but validation happens at the end
+      setActiveTab(prev => prev + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      // 3. Final Submission Validation
+      // We must check if ALL required fields for ALL officials are filled
+
+      const missingData = [];
+
+      // Check each official
+      officials.forEach((official, index) => {
+        const tabKey = `official_${index}`;
+        const officialRatings = ratings[tabKey] || {};
+
+        // Check if all categories are rated
+        const missingCategories = CATEGORY_LIST.filter(cat => !officialRatings[cat.id]);
+        if (missingCategories.length > 0) {
+          missingData.push(`${official.name} has ${missingCategories.length} missing ratings.`);
+        }
+      });
+
+      // Check Group Comment if applicable
+      if (isGroupEvaluation && !groupComment.trim()) {
+        // Optionally enforce group comment, or just warn
+        // missingData.push("Group comment is empty.");
+      }
+
+      if (missingData.length > 0) {
+        alert("Please complete all sections before submitting:\n\n" + missingData.join("\n"));
+        return;
+      }
+
+      // 4. Prepare Batch Params
+      const params = new URLSearchParams();
+      params.set('officials', JSON.stringify(officials)); // Pass all officials
+      params.set('ratings', JSON.stringify(ratings));     // Pass all ratings map
+      params.set('comments', JSON.stringify(comments));   // Pass all comments map
+
+      if (isGroupEvaluation) {
+        params.set('isGroup', 'true');
+        params.set('groupComment', groupComment);
+      }
+
+      if (location) params.set('gameLocation', location);
+
+      router.push(`/evaluator/evaluation-review?${params.toString()}`);
     }
-
-    const officialData = officials[activeTab];
-    if (!officialData) {
-      alert('No official selected.');
-      return;
-    }
-
-    const tabKey = `official_${activeTab}`;
-    const officialRatings = ratings[tabKey] || {};
-    const officialComments = comments[tabKey] || {};
-
-    const params = new URLSearchParams();
-    params.set('official', JSON.stringify(officialData));
-    params.set('ratings', JSON.stringify(officialRatings));
-    params.set('comments', JSON.stringify(officialComments));
-    params.set('gameLocation', location || '');
-
-    router.push(`/evaluator/evaluation-review?${params.toString()}`);
   };
 
   return (
@@ -483,13 +514,13 @@ const EvaluationFormContent = () => {
       {/* Game Info Banner */}
       <div className='bg-[#222] border-b border-[#3a3a3a] py-3 px-6 lg:px-8'>
         <div className='max-w-md mx-auto lg:max-w-6xl flex flex-wrap items-center justify-between gap-2'>
-           <div className='flex items-center gap-2 text-white/90 text-sm font-medium'>
-              <span className='text-accent'>📍</span> {location || officials[0]?.location || 'Unknown Location'}
-           </div>
-           <div className='flex items-center gap-4 text-white/60 text-xs'>
-              <span>📅 {officials[0]?.date ? new Date(officials[0].date).toLocaleDateString() : 'N/A'}</span>
-              <span>⏰ {officials[0]?.time || 'N/A'}</span>
-           </div>
+          <div className='flex items-center gap-2 text-white/90 text-sm font-medium'>
+            <span className='text-accent'>📍</span> {location || officials[0]?.location || 'Unknown Location'}
+          </div>
+          <div className='flex items-center gap-4 text-white/60 text-xs'>
+            <span>📅 {officials[0]?.date ? new Date(officials[0].date).toLocaleDateString() : 'N/A'}</span>
+            <span>⏰ {officials[0]?.time || 'N/A'}</span>
+          </div>
         </div>
       </div>
 
@@ -503,11 +534,10 @@ const EvaluationFormContent = () => {
                   <button
                     key={index}
                     onClick={() => setActiveTab(index)}
-                    className={`flex-shrink-0 px-4 py-3 text-sm font-medium transition-all ${
-                      activeTab === index
-                        ? 'text-white border-b-2 border-accent'
-                        : 'text-white/60 hover:text-white/80'
-                    }`}
+                    className={`flex-shrink-0 px-4 py-3 text-sm font-medium transition-all ${activeTab === index
+                      ? 'text-white border-b-2 border-accent'
+                      : 'text-white/60 hover:text-white/80'
+                      }`}
                   >
                     {official.name.split(' ')[0]}{' '}
                     {official.name.split(' ')[1]?.[0]}.
@@ -516,11 +546,10 @@ const EvaluationFormContent = () => {
                 {isGroupEvaluation && (
                   <button
                     onClick={() => setActiveTab(officials.length)}
-                    className={`flex-shrink-0 px-4 py-3 text-sm font-medium transition-all flex items-center gap-2 ${
-                      isGroupTab
-                        ? 'text-white border-b-2 border-accent'
-                        : 'text-white/60 hover:text-white/80'
-                    }`}
+                    className={`flex-shrink-0 px-4 py-3 text-sm font-medium transition-all flex items-center gap-2 ${isGroupTab
+                      ? 'text-white border-b-2 border-accent'
+                      : 'text-white/60 hover:text-white/80'
+                      }`}
                   >
                     <IoPeople className='w-4 h-4' />
                     Group
@@ -578,11 +607,10 @@ const EvaluationFormContent = () => {
                     </h3>
                     <button
                       onClick={handleGroupMicClick}
-                      className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${
-                        isGroupRecording
-                          ? 'bg-red-600 hover:bg-red-700'
-                          : 'bg-accent hover:bg-accent/90'
-                      }`}
+                      className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${isGroupRecording
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-accent hover:bg-accent/90'
+                        }`}
                       title={
                         isGroupRecording ? 'Stop recording' : 'Start recording'
                       }
@@ -638,11 +666,10 @@ const EvaluationFormContent = () => {
                               onClick={() =>
                                 handleRatingClick(category.id, rating)
                               }
-                              className={`w-11 h-11 lg:w-12 lg:h-12 rounded-full border-2 flex items-center justify-center text-[15px] lg:text-[16px] font-normal transition-all ${
-                                getCurrentRatings()[category.id] === rating
-                                  ? 'bg-accent border-accent text-white'
-                                  : 'bg-transparent border-[#4a4a4a] text-white hover:border-[#6a6a6a]'
-                              }`}
+                              className={`w-11 h-11 lg:w-12 lg:h-12 rounded-full border-2 flex items-center justify-center text-[15px] lg:text-[16px] font-normal transition-all ${getCurrentRatings()[category.id] === rating
+                                ? 'bg-accent border-accent text-white'
+                                : 'bg-transparent border-[#4a4a4a] text-white hover:border-[#6a6a6a]'
+                                }`}
                             >
                               {rating}
                             </button>
@@ -652,14 +679,13 @@ const EvaluationFormContent = () => {
                         {/* Microphone Button */}
                         <button
                           onClick={() => handleMicClick(category.id)}
-                          className={`w-8 h-8 lg:w-12 lg:h-12 rounded-full flex items-center justify-center transition-all shrink-0 relative ${
-                            isRecording[`${getCurrentTabKey()}_${category.id}`]
-                              ? 'bg-red-600 animate-pulse'
-                              : activeComment === category.id ||
-                                getCurrentComments()[category.id]
+                          className={`w-8 h-8 lg:w-12 lg:h-12 rounded-full flex items-center justify-center transition-all shrink-0 relative ${isRecording[`${getCurrentTabKey()}_${category.id}`]
+                            ? 'bg-red-600 animate-pulse'
+                            : activeComment === category.id ||
+                              getCurrentComments()[category.id]
                               ? 'bg-accent'
                               : 'bg-[#3a3a3a] hover:bg-[#4a4a4a]'
-                          }`}
+                            }`}
                           title={
                             isRecording[`${getCurrentTabKey()}_${category.id}`]
                               ? 'Stop recording'
@@ -670,8 +696,8 @@ const EvaluationFormContent = () => {
                           {isRecording[
                             `${getCurrentTabKey()}_${category.id}`
                           ] && (
-                            <span className='absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping' />
-                          )}
+                              <span className='absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping' />
+                            )}
                         </button>
                       </div>
 
@@ -679,42 +705,42 @@ const EvaluationFormContent = () => {
                       {recordingStatus[
                         `${getCurrentTabKey()}_${category.id}`
                       ] && (
-                        <div className='mt-3 flex items-center gap-2'>
-                          <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse' />
-                          <span className='text-[13px] text-gray-400'>
-                            {
-                              recordingStatus[
+                          <div className='mt-3 flex items-center gap-2'>
+                            <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse' />
+                            <span className='text-[13px] text-gray-400'>
+                              {
+                                recordingStatus[
                                 `${getCurrentTabKey()}_${category.id}`
-                              ]
-                            }
-                          </span>
-                        </div>
-                      )}
+                                ]
+                              }
+                            </span>
+                          </div>
+                        )}
 
                       {/* Comment Display/Edit Area */}
                       {(activeComment === category.id ||
                         getCurrentComments()[category.id]) && (
-                        <div className='mt-4'>
-                          {activeComment === category.id ? (
-                            <textarea
-                              value={getCurrentComments()[category.id] || ''}
-                              onChange={(e) =>
-                                handleCommentChange(category.id, e.target.value)
-                              }
-                              placeholder='Add your comment here...'
-                              className='w-full bg-[#1a1a1a] text-white placeholder-[#6b7280] rounded-[10px] px-3.5 py-2.5 text-[13px] lg:text-[14px] text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] resize-none'
-                              rows={2}
-                              autoFocus
-                            />
-                          ) : (
-                            <div className='bg-[#1a1a1a] rounded-[10px] px-3.5 py-2.5 border border-[#3a3a3a]'>
-                              <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-relaxed'>
-                                {getCurrentComments()[category.id]}
+                          <div className='mt-4'>
+                            {activeComment === category.id ? (
+                              <textarea
+                                value={getCurrentComments()[category.id] || ''}
+                                onChange={(e) =>
+                                  handleCommentChange(category.id, e.target.value)
+                                }
+                                placeholder='Add your comment here...'
+                                className='w-full bg-[#1a1a1a] text-white placeholder-[#6b7280] rounded-[10px] px-3.5 py-2.5 text-[13px] lg:text-[14px] text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] resize-none'
+                                rows={2}
+                                autoFocus
+                              />
+                            ) : (
+                              <div className='bg-[#1a1a1a] rounded-[10px] px-3.5 py-2.5 border border-[#3a3a3a]'>
+                                <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-relaxed'>
+                                  {getCurrentComments()[category.id]}
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        )}
                     </div>
                   ))}
                 </div>
@@ -728,7 +754,7 @@ const EvaluationFormContent = () => {
                 className='w-full bg-accent hover:opacity-90 rounded-[15px] py-4 lg:py-[18px] text-center transition-all active:scale-[0.98] shadow-lg'
               >
                 <div className='text-[18px] lg:text-[19px] font-bold text-white heading'>
-                  Submit Evaluation
+                  {activeTab === totalTabs - 1 ? 'Review & Submit' : 'Next Section'}
                 </div>
               </button>
             </div>

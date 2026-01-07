@@ -1,19 +1,31 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { PiGlobeSimpleThin } from 'react-icons/pi';
+import { useRouter } from 'next/navigation';
+import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import BackButton from '@/ui/BackButton';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/services/firebase/config';
 
 const EvaluatorHeader = ({
   userName = 'User',
   userInitials = 'U',
   showBackButton = true,
 }) => {
+  const router = useRouter();
   const [profileData, setProfileData] = useState({
     initials: userInitials,
     photo: null,
   });
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push('/evaluator/login'); // Or general login
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   // Load profile data from localStorage
   useEffect(() => {
@@ -60,6 +72,14 @@ const EvaluatorHeader = ({
           <div className='w-12 h-12 lg:w-14 lg:h-14 bg-white/20 rounded-full flex items-center justify-center'>
             <PiGlobeSimpleThin className='w-7 h-7 lg:w-8 lg:h-8 text-white' />
           </div>
+
+          <button
+            onClick={handleLogout}
+            className='w-12 h-12 lg:w-14 lg:h-14 bg-red-500/20 hover:bg-red-500/30 rounded-full flex items-center justify-center transition-all'
+            title="Logout"
+          >
+            <PiSignOut className='w-6 h-6 lg:w-7 lg:h-7 text-red-200' />
+          </button>
         </div>
 
         <h1 className='text-2xl lg:text-3xl font-bold text-white heading'>

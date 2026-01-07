@@ -154,6 +154,18 @@ const EvaluationDetailPage = () => {
         tier: editForm.tierAssigned,
       });
 
+      // Sync tier to referee profile (Master Roster update)
+      if (evaluation.refereeId) {
+        try {
+          const refereeRef = doc(db, 'users', evaluation.refereeId);
+          await updateDoc(refereeRef, {
+            suggestedTier: editForm.tierAssigned
+          });
+        } catch (err) {
+          console.error("Error syncing tier to user profile:", err);
+        }
+      }
+
       toast.success("Evaluation updated successfully!");
 
       // Update local state
