@@ -58,9 +58,8 @@ const RefereesPage = () => {
             const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
             const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
 
-            // Get suggested tier from the MOST RECENT evaluation
-            const latestEval = refereeEvals[0]; // Already sorted by desc
-            const suggestedTier = latestEval?.suggestedTier || referee.suggestedTier || 'N/A';
+            // Get suggested tier: Prioritize the User Profile field (updated on submission), fallback to latest eval
+            const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
 
             return {
               ...referee,

@@ -84,8 +84,8 @@ const AdminDashboardPage = () => {
         });
 
         const refereesCount = referees.length;
-        // Logic for top tier: simply taking the first 3 referees found for now
-        const topReferees = referees.slice(0, 3).map((r) => r.displayName || 'Unknown');
+        // Logic for top tier will be calculated after processing evaluations
+
 
         // 2. Fetch All Evaluations
         const evaluationsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
@@ -110,6 +110,23 @@ const AdminDashboardPage = () => {
         // Calculate Average Score
         const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
         const averageScore = evaluationsCount > 0 ? (totalScore / evaluationsCount).toFixed(1) : '0.0';
+
+        // Calculate Top Tier Officials (Dynamic)
+        const refStats = {};
+        evaluationsData.forEach(ev => {
+          const rId = ev.refereeId;
+          if (!rId) return;
+          if (!refStats[rId]) refStats[rId] = { total: 0, count: 0, name: ev.refereeName };
+          refStats[rId].total += (ev.totalScore || 0);
+          refStats[rId].count += 1;
+        });
+
+        const topReferees = Object.values(refStats)
+          .map(stat => ({ name: stat.name, avg: stat.total / stat.count }))
+          .sort((a, b) => b.avg - a.avg)
+          .slice(0, 3)
+          .map(r => r.name);
+
 
         // Calculate Evaluations This Week
         const now = new Date();

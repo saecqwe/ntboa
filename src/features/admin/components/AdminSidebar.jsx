@@ -38,9 +38,9 @@ const NAV_ITEMS = [
     href: '/admin/locations',
   },
   {
-    name: 'Upload Roster',
+    name: 'Import Data',
     icon: HiOutlineUpload,
-    href: '/admin/upload-roster',
+    href: '/admin/import-data',
   },
   { name: 'Settings', icon: HiOutlineCog, href: '/admin/settings' },
 ];
@@ -98,9 +98,8 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
       )}
 
       <aside
-        className={`w-64 bg-gradient-secondary h-screen flex flex-col fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}
+        className={`w-64 bg-gradient-secondary h-screen flex flex-col fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'
+          } lg:translate-x-0`}
       >
         <button
           onClick={closeSidebar}
@@ -126,11 +125,10 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
                   <Link
                     href={href}
                     onClick={closeSidebar}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                      isActive
-                        ? 'bg-white/20 text-white'
-                        : 'text-white/90 hover:bg-white/10'
-                    }`}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/90 hover:bg-white/10'
+                      }`}
                   >
                     <Icon className='w-5 h-5' />
                     <span className='text-fluid-base font-medium text-body'>

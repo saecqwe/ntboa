@@ -49,7 +49,7 @@ const EvaluationReviewContent = () => {
 
   const ratings = JSON.parse(searchParams.get('ratings') || '{}');
   const comments = JSON.parse(searchParams.get('comments') || '{}');
-  
+
   const ratingValues = Object.values(ratings).filter(Boolean);
   const totalScore = ratingValues.reduce((acc, val) => acc + val, 0);
   const maxScore = CATEGORY_LIST.length * 5;
@@ -97,7 +97,7 @@ const EvaluationReviewContent = () => {
     params.set('initialRatings', JSON.stringify(ratings));
     params.set('initialComments', JSON.stringify(comments));
     if (gameLocation) params.set('location', gameLocation);
-    
+
     router.push(`/evaluator/evaluation-form?${params.toString()}`);
   };
 
@@ -143,6 +143,17 @@ const EvaluationReviewContent = () => {
         }
       }
 
+      // CRITICAL: Update the Referee's profile with the Suggested Tier
+      // This ensures the Master Roster and other views see the latest suggestion immediately
+      try {
+        const refereeRef = doc(db, 'users', official.id);
+        await updateDoc(refereeRef, {
+          suggestedTier: `Tier ${currentTier.tier}`
+        });
+      } catch (tierError) {
+        console.error("Error updating referee suggested tier:", tierError);
+      }
+
       alert('Evaluation submitted successfully!');
       router.push('/evaluator/home');
     } catch (error) {
@@ -157,9 +168,8 @@ const EvaluationReviewContent = () => {
       {[1, 2, 3, 4, 5].map((star) => (
         <div
           key={star}
-          className={`w-[8px] h-[8px] rounded-full ${
-            star <= rating ? 'bg-accent' : 'bg-[#4a4a4a]'
-          }`}
+          className={`w-[8px] h-[8px] rounded-full ${star <= rating ? 'bg-accent' : 'bg-[#4a4a4a]'
+            }`}
         />
       ))}
     </div>
@@ -228,7 +238,7 @@ const EvaluationReviewContent = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-gray-700 text-sm italic">
                     &quot;{currentTier.desc}&quot;
@@ -240,35 +250,35 @@ const EvaluationReviewContent = () => {
             {/* Tier Reference Table */}
             <div className='mb-8 lg:mb-10'>
               <div className='bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a]'>
-                 <div className="px-6 py-4 border-b border-[#3a3a3a]">
-                    <h3 className="text-white font-semibold">Chapter Tier Ranking System</h3>
-                 </div>
-                 <div className="overflow-x-auto">
-                   <table className="w-full text-left text-sm text-gray-400">
-                     <thead className="bg-[#333] text-gray-200 uppercase font-medium">
-                       <tr>
-                         <th className="px-6 py-3">Tier</th>
-                         <th className="px-6 py-3">Score</th>
-                         <th className="px-6 py-3">Description</th>
-                       </tr>
-                     </thead>
-                     <tbody className="divide-y divide-[#3a3a3a]">
-                       {TIER_DATA.map((tier) => (
-                         <tr key={tier.tier} className={currentTier.tier === tier.tier ? 'bg-accent/10' : ''}>
-                           <td className={`px-6 py-4 font-bold ${currentTier.tier === tier.tier ? 'text-accent' : 'text-white'}`}>
-                             {tier.tier}
-                           </td>
-                           <td className="px-6 py-4 text-white whitespace-nowrap">
-                             {tier.range[0]} - {tier.range[1]}
-                           </td>
-                           <td className="px-6 py-4 text-gray-300">
-                             {tier.desc}
-                           </td>
-                         </tr>
-                       ))}
-                     </tbody>
-                   </table>
-                 </div>
+                <div className="px-6 py-4 border-b border-[#3a3a3a]">
+                  <h3 className="text-white font-semibold">Chapter Tier Ranking System</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-gray-400">
+                    <thead className="bg-[#333] text-gray-200 uppercase font-medium">
+                      <tr>
+                        <th className="px-6 py-3">Tier</th>
+                        <th className="px-6 py-3">Score</th>
+                        <th className="px-6 py-3">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#3a3a3a]">
+                      {TIER_DATA.map((tier) => (
+                        <tr key={tier.tier} className={currentTier.tier === tier.tier ? 'bg-accent/10' : ''}>
+                          <td className={`px-6 py-4 font-bold ${currentTier.tier === tier.tier ? 'text-accent' : 'text-white'}`}>
+                            {tier.tier}
+                          </td>
+                          <td className="px-6 py-4 text-white whitespace-nowrap">
+                            {tier.range[0]} - {tier.range[1]}
+                          </td>
+                          <td className="px-6 py-4 text-gray-300">
+                            {tier.desc}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -290,9 +300,8 @@ const EvaluationReviewContent = () => {
                       className='bg-[#2a2a2a] rounded-[16px] px-6 py-[18px] lg:px-6 lg:py-[18px] border border-[#3a3a3a] transition-all'
                     >
                       <div
-                        className={`flex items-center justify-between gap-4 ${
-                          hasComment ? 'cursor-pointer' : ''
-                        }`}
+                        className={`flex items-center justify-between gap-4 ${hasComment ? 'cursor-pointer' : ''
+                          }`}
                         onClick={() => toggleCategory(category.id)}
                       >
                         <div className='text-[15px] lg:text-[16px] font-normal text-white text-body flex-1 leading-tight'>
@@ -310,11 +319,10 @@ const EvaluationReviewContent = () => {
 
                       {comment && (
                         <div
-                          className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                            isExpanded
+                          className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded
                               ? 'max-h-[500px] opacity-100 mt-3'
                               : 'max-h-0 opacity-0'
-                          }`}
+                            }`}
                         >
                           <div className='pl-4 border-l-[3px] border-[#555555]'>
                             <p className='text-[13px] lg:text-[13px] text-[#9ca3af] text-body leading-[1.6]'>
@@ -336,7 +344,7 @@ const EvaluationReviewContent = () => {
               >
                 Edit Evaluation
               </button>
-              
+
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
