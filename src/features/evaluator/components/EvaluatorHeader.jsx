@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import BackButton from '@/ui/BackButton';
+import { useAuth } from '@/authentication/hooks/useAuth';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/services/firebase/config';
 
@@ -14,6 +15,7 @@ const EvaluatorHeader = ({
   showBackButton = true,
 }) => {
   const router = useRouter();
+  const { userData } = useAuth();
   const [profileData, setProfileData] = useState({
     initials: userInitials,
     photo: null,
@@ -28,41 +30,30 @@ const EvaluatorHeader = ({
     }
   };
 
-  // Load profile data from localStorage
   useEffect(() => {
-    const savedProfile = localStorage.getItem('evaluatorProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setProfileData({
-        initials: profile.initials || userInitials,
-        photo: profile.photo,
-      });
-    }
-  }, [userInitials]);
+    const name = userData?.name || userInitials;
+    const initials = name
+      ? name
+          .trim()
+          .split(' ')
+          .filter((n) => n.length > 0)
+          .map((part) => part.charAt(0).toUpperCase())
+          .join('')
+          .slice(0, 2)
+      : userInitials;
 
-  // Listen for profile updates
-  useEffect(() => {
-    const handleStorageChange = () => {
+    let photo = userData?.photo || null;
+
+    if (!photo && typeof window !== 'undefined') {
       const savedProfile = localStorage.getItem('evaluatorProfile');
       if (savedProfile) {
         const profile = JSON.parse(savedProfile);
-        setProfileData({
-          initials: profile.initials || userInitials,
-          photo: profile.photo,
-        });
+        photo = profile.photo || photo;
       }
-    };
+    }
 
-    window.addEventListener('storage', handleStorageChange);
-
-    // Also listen for custom profile update events
-    window.addEventListener('profileUpdated', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('profileUpdated', handleStorageChange);
-    };
-  }, [userInitials]);
+    setProfileData({ initials, photo });
+  }, [userData, userInitials]);
 
   return (
     <header className='py-4 px-6 lg:py-5 lg:px-8'>

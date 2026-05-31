@@ -1,10 +1,15 @@
 'use client';
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { FaUser, FaCamera } from 'react-icons/fa';
 import BackButton from '@/ui/BackButton';
+import { useAuth } from '@/authentication/hooks/useAuth';
+import { updateUserProfile, changeUserPassword } from '@/authentication/services/authService';
 
 const EvaluatorProfilePage = () => {
+  const router = useRouter();
+  const { user, userData, loading, refreshUserData } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -21,25 +26,35 @@ const EvaluatorProfilePage = () => {
   const [message, setMessage] = useState('');
   const fileInputRef = useRef(null);
 
-  // Load profile data from localStorage on component mount
   useEffect(() => {
-    const savedProfile = localStorage.getItem('evaluatorProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setFormData(profile);
-      if (profile.photo) {
-        setPhotoPreview(profile.photo);
-      }
-    } else {
-      // Set default data if no profile exists
-      setFormData({
-        name: 'John Smith',
-        email: 'john.smith@ntboa.com',
-        phone: '+1 (555) 123-4567',
-        initials: 'JS',
-      });
+    if (!loading && !user) {
+      router.replace('/evaluator/login');
     }
-  }, []);
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (userData || user) {
+      const name = userData?.name || user?.displayName || '';
+      setFormData({
+        name,
+        email: userData?.email || user?.email || '',
+        phone: userData?.phone || '',
+        initials: name
+          ? name
+              .trim()
+              .split(' ')
+              .filter((n) => n.length > 0)
+              .map((part) => part.charAt(0).toUpperCase())
+              .join('')
+              .slice(0, 2)
+          : '',
+      });
+
+      if (userData?.photo) {
+        setPhotoPreview(userData.photo);
+      }
+    }
+  }, [userData, user]);
 
   const handleInputChange = useCallback((field, value) => {
     setFormData((prev) => {
@@ -96,28 +111,26 @@ const EvaluatorProfilePage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) return;
+
     setIsLoading(true);
     setMessage('');
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Save to localStorage
-      const profileData = {
-        ...formData,
+      await updateUserProfile(user.uid, {
+        name: formData.name,
+        phone: formData.phone,
         photo: photoPreview,
-      };
+      });
 
-      localStorage.setItem('evaluatorProfile', JSON.stringify(profileData));
-
-      // Trigger custom event for header to update
-      window.dispatchEvent(new Event('profileUpdated'));
-
+      await refreshUserData?.();
       setMessage('Profile updated successfully!');
+      setIsLoading(false);
+
+      window.dispatchEvent(new Event('profileUpdated'));
     } catch (error) {
+      console.error(error);
       setMessage('Failed to update profile. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -125,13 +138,33 @@ const EvaluatorProfilePage = () => {
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
 
-    if (password.new !== password.confirm) {
-      setMessage('New passwords do not match');
+    if (!password.current.trim()) {
+      setMessage('Please enter your current password.');
+      return;
+    }
+
+    if (!password.new.trim()) {
+      setMessage('Please enter a new password.');
+      return;
+    }
+
+    if (!password.confirm.trim()) {
+      setMessage('Please confirm your new password.');
       return;
     }
 
     if (password.new.length < 6) {
-      setMessage('Password must be at least 6 characters long');
+      setMessage('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (password.new !== password.confirm) {
+      setMessage('New passwords do not match.');
+      return;
+    }
+
+    if (!user) {
+      setMessage('Unable to change password: user is not authenticated.');
       return;
     }
 
@@ -139,13 +172,21 @@ const EvaluatorProfilePage = () => {
     setMessage('');
 
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
+      await changeUserPassword(password.current, password.new);
       setMessage('Password changed successfully!');
       setPassword({ current: '', new: '', confirm: '' });
     } catch (error) {
-      setMessage('Failed to change password. Please try again.');
+      console.error(error);
+      if (error?.code === 'auth/wrong-password') {
+        setMessage('Current password is incorrect.');
+      } else if (
+        error?.code === 'auth/weak-password' ||
+        error?.message?.toLowerCase().includes('weak-password')
+      ) {
+        setMessage('New password is too weak; please choose a stronger password.');
+      } else {
+        setMessage('Failed to change password. ' + (error?.message || 'Please try again.'));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -165,6 +206,7 @@ const EvaluatorProfilePage = () => {
       type: 'email',
       value: formData.email,
       required: true,
+      disabled: true,
     },
     {
       id: 'phone',
@@ -322,7 +364,8 @@ const EvaluatorProfilePage = () => {
                         handleInputChange(field.id, e.target.value)
                       }
                       required={field.required}
-                      className='w-full p-3 bg-[#2b2b2b] border border-[#3b3b3b] rounded-lg text-white placeholder-white/50 focus:border-[#c41414] focus:ring-1 focus:ring-[#c41414] focus:outline-none transition-colors'
+                      disabled={field.disabled}
+                      className='w-full p-3 bg-[#2b2b2b] border border-[#3b3b3b] rounded-lg text-white placeholder-white/50 focus:border-[#c41414] focus:ring-1 focus:ring-[#c41414] focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-60'
                     />
                   </div>
                 ))}
@@ -386,6 +429,14 @@ const EvaluatorProfilePage = () => {
                         handlePasswordChange(field.id, e.target.value)
                       }
                       required={field.required}
+                      minLength={field.id === 'new' ? 6 : undefined}
+                      autoComplete={
+                        field.id === 'current'
+                          ? 'current-password'
+                          : field.id === 'new'
+                          ? 'new-password'
+                          : 'new-password'
+                      }
                       className='w-full p-3 bg-[#2b2b2b] border border-[#3b3b3b] rounded-lg text-white placeholder-white/50 focus:border-[#c41414] focus:ring-1 focus:ring-[#c41414] focus:outline-none transition-colors'
                       placeholder={`Enter ${field.label.toLowerCase()}`}
                     />
@@ -397,12 +448,7 @@ const EvaluatorProfilePage = () => {
               <div className='flex justify-end pt-4'>
                 <button
                   type='submit'
-                  disabled={
-                    isLoading ||
-                    !password.current ||
-                    !password.new ||
-                    !password.confirm
-                  }
+                  disabled={isLoading}
                   className='bg-[#c41414] hover:bg-[#d41515] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors min-w-32'
                 >
                   {isLoading ? 'Changing...' : 'Change Password'}
