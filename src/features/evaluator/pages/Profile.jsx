@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { FaUser, FaCamera } from 'react-icons/fa';
-import BackButton from '@/components/ui/BackButton';
+import BackButton from '@/ui/BackButton';
 
 const EvaluatorProfilePage = () => {
   const [formData, setFormData] = useState({
