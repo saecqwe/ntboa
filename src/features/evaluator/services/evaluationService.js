@@ -12,9 +12,22 @@ export const getEvaluationById = async (evaluationId) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
       
-      // Fetch referee details
+      // Fetch referee details or group evaluation metadata
       let referee = { name: 'Unknown', email: '', tier: '' };
-      if (data.refereeId) {
+      if (data.refereeIds && Array.isArray(data.refereeIds)) {
+        if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
+          referee.name = data.refereeNames.length > 2
+            ? `${data.refereeNames.slice(0,2).join(', ')} +${data.refereeNames.length - 2} more`
+            : data.refereeNames.join(', ');
+        } else if (Array.isArray(data.officials) && data.officials.length > 0) {
+          referee.name = data.officials.length > 2
+            ? `${data.officials.slice(0,2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
+            : data.officials.map((o) => o.name).join(', ');
+        } else {
+          referee.name = `Group Evaluation (${data.refereeIds.length} Officials)`;
+        }
+        referee.tier = data.tier || '';
+      } else if (data.refereeId) {
         const refereeDoc = await getDoc(doc(db, 'users', data.refereeId));
         if (refereeDoc.exists()) {
           const refData = refereeDoc.data();
@@ -96,13 +109,30 @@ export const getEvaluationsByEvaluator = async (evaluatorId) => {
         }
       }
 
-      return {
+      const evaluation = {
         id: docSnap.id,
         ...data,
         refereeName,
+        maxScore: data.maxScore || 40,
         // Keep as Date object for initial sorting
         date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0), 
       };
+
+      if (data.refereeIds && Array.isArray(data.refereeIds)) {
+        if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
+          evaluation.refereeName = data.refereeNames.length > 2
+            ? `${data.refereeNames.slice(0,2).join(', ')} +${data.refereeNames.length - 2} more`
+            : data.refereeNames.join(', ');
+        } else if (Array.isArray(data.officials) && data.officials.length > 0) {
+          evaluation.refereeName = data.officials.length > 2
+            ? `${data.officials.slice(0,2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
+            : data.officials.map((o) => o.name).join(', ');
+        } else {
+          evaluation.refereeName = `Group Evaluation (${data.refereeIds.length} Officials)`;
+        }
+      }
+
+      return evaluation;
     }));
 
     return evaluations.sort((a, b) => b.date - a.date);

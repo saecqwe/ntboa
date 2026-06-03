@@ -124,7 +124,7 @@ const EvaluationsPage = () => {
                       {/* Right Side - Score and Tier */}
                       <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px]'>
                         <div className='text-base text-white heading leading-none'>
-                          {evaluation.totalScore}/40
+                          {evaluation.totalScore}/{evaluation.maxScore || 40}
                         </div>
                         <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
                           {evaluation.tier || 'N/A'}

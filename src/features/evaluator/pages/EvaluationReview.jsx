@@ -42,21 +42,40 @@ const EvaluationReviewContent = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const officialsParam = searchParams.get('officials');
+  const parsedOfficials = officialsParam
+    ? JSON.parse(decodeURIComponent(officialsParam))
+    : [];
+
   const officialParam = searchParams.get('official');
-  const official = officialParam
+  const fallbackOfficial = officialParam
     ? JSON.parse(officialParam)
     : { name: 'Michael Johnson', tier: 'Tier 150', id: null };
+
+  const officials = parsedOfficials.length > 0 ? parsedOfficials : [fallbackOfficial];
+  const official = officials[0];
 
   const ratings = JSON.parse(searchParams.get('ratings') || '{}');
   const comments = JSON.parse(searchParams.get('comments') || '{}');
 
-  const ratingValues = Object.values(ratings).filter(Boolean);
-  const totalScore = ratingValues.reduce((acc, val) => acc + val, 0);
-  const maxScore = CATEGORY_LIST.length * 5;
+  const flattenedRatingValues = Object.values(ratings).flatMap((entry) => {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      return Object.values(entry).map((value) => Number(value));
+    }
+    return [Number(entry)];
+  }).filter((value) => Number.isFinite(value));
 
-  const currentTier = calculateTier(totalScore);
+  const totalScore = flattenedRatingValues.reduce((acc, val) => acc + val, 0);
+  const ratingGroups = Object.values(ratings).filter(
+    (entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+  ).length || 1;
+  const maxScore = CATEGORY_LIST.length * 5 * ratingGroups;
+  const effectiveScoreForTier = ratingGroups > 1 ? totalScore / ratingGroups : totalScore;
+
+  const currentTier = calculateTier(effectiveScoreForTier);
 
   const gameLocation = searchParams.get('gameLocation');
+  const groupComment = searchParams.get('groupComment') || '';
 
   const [expandedCategories, setExpandedCategories] = useState(() => {
     const initialExpanded = {};
@@ -93,9 +112,11 @@ const EvaluationReviewContent = () => {
 
   const handleEdit = () => {
     const params = new URLSearchParams();
-    params.set('officials', JSON.stringify([official]));
+    params.set('officials', JSON.stringify(officials));
     params.set('initialRatings', JSON.stringify(ratings));
     params.set('initialComments', JSON.stringify(comments));
+    if (officials.length > 1) params.set('isGroup', 'true');
+    if (groupComment) params.set('groupComment', groupComment);
     if (gameLocation) params.set('location', gameLocation);
 
     router.push(`/evaluator/evaluation-form?${params.toString()}`);
@@ -116,43 +137,62 @@ const EvaluationReviewContent = () => {
       // totalScore is already calculated above
 
       const evaluationData = {
-        refereeId: official.id,
         evaluatorId: user.uid,
         scores,
         totalScore,
+        maxScore,
         tier: currentTier.tier, // Save the calculated tier
         comments: comments || {},
+        groupComment: groupComment || '',
+        isGroup: officials.length > 1,
+        officials: officials.map(({ id, name, tier, assignmentId, location, date }) => ({
+          id,
+          name,
+          tier,
+          assignmentId,
+          location,
+          date,
+        })),
         gameDate: official.date || new Date().toISOString(),
         location: gameLocation || official.location,
         createdAt: serverTimestamp(),
       };
 
+      if (officials.length > 1) {
+        evaluationData.refereeIds = officials.map((off) => off.id).filter(Boolean);
+        evaluationData.refereeNames = officials.map((off) => off.name).filter(Boolean);
+      } else {
+        evaluationData.refereeId = official.id;
+      }
+
       await addDoc(collection(db, 'evaluations'), evaluationData);
 
-      // Update assignment status if assignmentId exists
-      if (official.assignmentId) {
+      // Update assignment status for all officials in the group
+      await Promise.all(officials.map(async (off) => {
+        if (!off.assignmentId) return;
         try {
-          const assignmentRef = doc(db, 'assignments', official.assignmentId);
+          const assignmentRef = doc(db, 'assignments', off.assignmentId);
           await updateDoc(assignmentRef, {
             status: 'completed',
-            completedAt: serverTimestamp()
+            completedAt: serverTimestamp(),
           });
         } catch (updateError) {
-          console.error("Error updating assignment status:", updateError);
-          // We don't block the success flow if this fails, but we log it
+          console.error("Error updating assignment status for official", off.id, updateError);
         }
-      }
+      }));
 
-      // CRITICAL: Update the Referee's profile with the Suggested Tier
-      // This ensures the Master Roster and other views see the latest suggestion immediately
-      try {
-        const refereeRef = doc(db, 'users', official.id);
-        await updateDoc(refereeRef, {
-          suggestedTier: `Tier ${currentTier.tier}`
-        });
-      } catch (tierError) {
-        console.error("Error updating referee suggested tier:", tierError);
-      }
+      // Update each official's profile with the Suggested Tier
+      await Promise.all(officials.map(async (off) => {
+        if (!off.id) return;
+        try {
+          const refereeRef = doc(db, 'users', off.id);
+          await updateDoc(refereeRef, {
+            suggestedTier: `Tier ${currentTier.tier}`,
+          });
+        } catch (tierError) {
+          console.error("Error updating referee suggested tier for official", off.id, tierError);
+        }
+      }));
 
       alert('Evaluation submitted successfully!');
       router.push('/evaluator/home');
@@ -188,7 +228,7 @@ const EvaluationReviewContent = () => {
       {/* Title */}
       <div className='text-center mb-4'>
         <h2 className='text-[20px] lg:text-[22px] font-semibold text-white heading'>
-          Review & Submit ({parsedOfficials.length} Officials)
+          Review & Submit ({officials.length} Officials)
         </h2>
       </div>
 

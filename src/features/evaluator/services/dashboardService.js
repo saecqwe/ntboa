@@ -29,23 +29,36 @@ export const getDashboardData = async (userId) => {
     // Calculate Stats
     const totalEvaluations = evaluations.length;
     const totalScoreSum = evaluations.reduce((sum, ev) => sum + (ev.totalScore || 0), 0);
-    // Average Rating (1-5 scale, assuming max score 40)
-    const averageRating = totalEvaluations > 0 ? (totalScoreSum / (totalEvaluations * 8)).toFixed(1) : 0;
+    const totalMaxScoreSum = evaluations.reduce((sum, ev) => sum + (ev.maxScore || 40), 0);
+    // Average Rating (1-5 scale)
+    const averageRating = totalMaxScoreSum > 0 ? (totalScoreSum / totalMaxScoreSum * 5).toFixed(1) : 0;
 
     // Recent Evaluations (Top 3)
     const recentDocs = evaluations.slice(0, 3);
     const recentEvaluations = await Promise.all(
       recentDocs.map(async (ev) => {
         let name = 'Unknown Official';
-        let tier = 'N/A';
+        let tier = ev.tier ? `Tier ${ev.tier}` : 'N/A';
 
-        if (ev.refereeId) {
+        if (ev.refereeIds && Array.isArray(ev.refereeIds)) {
+          if (Array.isArray(ev.refereeNames) && ev.refereeNames.length > 0) {
+            name = ev.refereeNames.length > 2
+              ? `${ev.refereeNames.slice(0, 2).join(', ')} +${ev.refereeNames.length - 2} more`
+              : ev.refereeNames.join(', ');
+          } else if (Array.isArray(ev.officials) && ev.officials.length > 0) {
+            name = ev.officials.length > 2
+              ? `${ev.officials.slice(0, 2).map((o) => o.name).join(', ')} +${ev.officials.length - 2} more`
+              : ev.officials.map((o) => o.name).join(', ');
+          } else {
+            name = `Group Evaluation (${ev.refereeIds.length} Officials)`;
+          }
+        } else if (ev.refereeId) {
           try {
             const userDoc = await getDoc(doc(db, 'users', ev.refereeId));
             if (userDoc.exists()) {
               const userData = userDoc.data();
               name = userData.displayName || userData.name || 'Unknown';
-              tier = userData.tier || 'N/A';
+              tier = userData.tier || tier;
             }
           } catch (err) {
             console.error('Error fetching referee', err);
@@ -58,7 +71,7 @@ export const getDashboardData = async (userId) => {
           date: ev.createdAt?.toDate
             ? ev.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
             : '',
-          score: `${ev.totalScore}/40`,
+          score: `${ev.totalScore}/${ev.maxScore || 40}`,
           tier,
         };
       })

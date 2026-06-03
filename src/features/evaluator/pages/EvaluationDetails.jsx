@@ -70,6 +70,8 @@ const EvaluationDetailsPage = () => {
     { id: 'collaboration', name: 'Team Collaboration' },
   ];
 
+  const isGroupEvaluation = evaluation.isGroup || (evaluation.refereeIds?.length || 0) > 1 || (evaluation.officials?.length || 0) > 1;
+
   const renderStars = (rating) => (
     <div className='flex items-center gap-[6px]'>
       {[1, 2, 3, 4, 5].map((star) => (
@@ -135,7 +137,7 @@ const EvaluationDetailsPage = () => {
                     <div className='text-[32px] lg:text-[36px] font-bold text-accent heading'>
                       {evaluation.totalScore}
                       <span className='text-[24px] lg:text-[28px] text-[#9ca3af]'>
-                        /40
+                        /{evaluation.maxScore || 40}
                       </span>
                     </div>
                   </div>
@@ -150,43 +152,110 @@ const EvaluationDetailsPage = () => {
               </h2>
 
               <div className='space-y-[10px] lg:space-y-[10px]'>
-                {CATEGORY_LIST.map((category) => {
-                  const rating = evaluation.scores?.[category.id] || 0;
-                  const comment = evaluation.comments?.[category.id];
+                {isGroupEvaluation ? (
+                  evaluation.officials?.map((official, index) => {
+                    const officialScores = evaluation.scores?.[`official_${index}`] || {};
+                    const officialComments = evaluation.comments?.[`official_${index}`] || {};
 
-                  return (
-                    <div
-                      key={category.id}
-                      className='bg-[#2a2a2a] rounded-[16px] px-6 py-[18px] lg:px-6 lg:py-[18px] border border-[#3a3a3a]'
-                    >
-                      <div className='flex items-center justify-between gap-4'>
-                        <div className='text-[15px] lg:text-[16px] font-normal text-white text-body flex-1 leading-tight'>
-                          {category.name}
+                    return (
+                      <div key={official.id || index} className='bg-[#2a2a2a] rounded-[16px] p-5 border border-[#3a3a3a]'>
+                        <div className='mb-4'>
+                          <h3 className='text-[17px] lg:text-[18px] font-semibold text-white'>
+                            {official.name}
+                          </h3>
+                          <p className='text-[#9ca3af] text-sm'>Official {index + 1}</p>
                         </div>
 
-                        <div className='flex-shrink-0 mx-3'>
-                          {renderStars(rating)}
-                        </div>
+                        <div className='space-y-[10px] lg:space-y-[10px]'>
+                          {CATEGORY_LIST.map((category) => {
+                            const rating = officialScores?.[category.id] || 0;
+                            const comment = officialComments?.[category.id];
 
-                        <div className='text-[16px] lg:text-[17px] font-normal text-white text-body min-w-[12px] text-right'>
-                          {rating}
+                            return (
+                              <div
+                                key={category.id}
+                                className='bg-[#252525] rounded-[16px] px-5 py-[16px] border border-[#3a3a3a]'
+                              >
+                                <div className='flex items-center justify-between gap-4'>
+                                  <div className='text-[15px] lg:text-[16px] font-normal text-white text-body flex-1 leading-tight'>
+                                    {category.name}
+                                  </div>
+
+                                  <div className='flex items-center gap-3'>
+                                    <div className='flex-shrink-0'>
+                                      {renderStars(rating)}
+                                    </div>
+                                    <div className='text-[16px] lg:text-[17px] font-normal text-white text-body min-w-[12px] text-right'>
+                                      {rating}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {comment && (
+                                  <div className='mt-3'>
+                                    <div className='pl-4 border-l-[3px] border-[#555555]'>
+                                      <p className='text-[13px] lg:text-[13px] text-[#9ca3af] text-body leading-[1.6]'>
+                                        {comment}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
+                    );
+                  })
+                ) : (
+                  CATEGORY_LIST.map((category) => {
+                    const rating = evaluation.scores?.[category.id] || 0;
+                    const comment = evaluation.comments?.[category.id];
 
-                      {comment && (
-                        <div className='mt-3'>
-                          <div className='pl-4 border-l-[3px] border-[#555555]'>
-                            <p className='text-[13px] lg:text-[13px] text-[#9ca3af] text-body leading-[1.6]'>
-                              {comment}
-                            </p>
+                    return (
+                      <div
+                        key={category.id}
+                        className='bg-[#2a2a2a] rounded-[16px] px-6 py-[18px] lg:px-6 lg:py-[18px] border border-[#3a3a3a]'
+                      >
+                        <div className='flex items-center justify-between gap-4'>
+                          <div className='text-[15px] lg:text-[16px] font-normal text-white text-body flex-1 leading-tight'>
+                            {category.name}
+                          </div>
+
+                          <div className='flex-shrink-0 mx-3'>
+                            {renderStars(rating)}
+                          </div>
+
+                          <div className='text-[16px] lg:text-[17px] font-normal text-white text-body min-w-[12px] text-right'>
+                            {rating}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+
+                        {comment && (
+                          <div className='mt-3'>
+                            <div className='pl-4 border-l-[3px] border-[#555555]'>
+                              <p className='text-[13px] lg:text-[13px] text-[#9ca3af] text-body leading-[1.6]'>
+                                {comment}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
+            {isGroupEvaluation && evaluation.groupComment && (
+              <div className='mb-8 lg:mb-10'>
+                <div className='bg-[#2a2a2a] rounded-[20px] px-6 py-5 lg:px-7 lg:py-6 border border-[#3a3a3a]'>
+                  <h3 className='text-[16px] lg:text-[17px] font-semibold text-white mb-3'>Group Comment</h3>
+                  <p className='text-[#9ca3af] text-[14px] leading-6'>
+                    {evaluation.groupComment}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>
