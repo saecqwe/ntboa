@@ -58,6 +58,9 @@ const EvaluationReviewContent = () => {
   const ratings = JSON.parse(searchParams.get('ratings') || '{}');
   const comments = JSON.parse(searchParams.get('comments') || '{}');
 
+  const officialRatings = ratings.official_0 || Object.values(ratings).find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)) || {};
+  const officialComments = comments.official_0 || Object.values(comments).find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)) || {};
+
   const flattenedRatingValues = Object.values(ratings).flatMap((entry) => {
     if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
       return Object.values(entry).map((value) => Number(value));
@@ -79,8 +82,8 @@ const EvaluationReviewContent = () => {
 
   const [expandedCategories, setExpandedCategories] = useState(() => {
     const initialExpanded = {};
-    Object.keys(comments).forEach((key) => {
-      if (comments[key]) initialExpanded[key] = true;
+    Object.keys(officialComments).forEach((key) => {
+      if (officialComments[key]) initialExpanded[key] = true;
     });
     return initialExpanded;
   });
@@ -329,8 +332,8 @@ const EvaluationReviewContent = () => {
 
               <div className='space-y-[10px] lg:space-y-[10px]'>
                 {CATEGORY_LIST.map((category) => {
-                  const rating = ratings[category.id];
-                  const comment = comments[category.id];
+                  const rating = officialRatings[category.id];
+                  const comment = officialComments[category.id];
                   const isExpanded = expandedCategories[category.id];
                   const hasComment = !!comment;
 

@@ -48,6 +48,10 @@ const EvaluationFormContent = () => {
     if (initialRatings) {
       try {
         const parsed = JSON.parse(initialRatings);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const hasOfficialKeys = Object.keys(parsed).some((key) => key.startsWith('official_'));
+          return hasOfficialKeys ? parsed : { 'official_0': parsed };
+        }
         return { 'official_0': parsed };
       } catch (e) {
         console.error('Error parsing initial ratings:', e);
@@ -62,6 +66,10 @@ const EvaluationFormContent = () => {
     if (initialComments) {
       try {
         const parsed = JSON.parse(initialComments);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const hasOfficialKeys = Object.keys(parsed).some((key) => key.startsWith('official_'));
+          return hasOfficialKeys ? parsed : { 'official_0': parsed };
+        }
         return { 'official_0': parsed };
       } catch (e) {
         console.error('Error parsing initial comments:', e);
