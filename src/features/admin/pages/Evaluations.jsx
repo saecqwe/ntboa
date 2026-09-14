@@ -90,7 +90,8 @@ const EvaluationsPage = () => {
     return {
       week: d.toLocaleDateString('en-US', { weekday: 'short' }),
       evaluations: evaluations.filter(e => {
-        const evalDate = new Date(e.createdAt.seconds * 1000);
+        const evalDate = e.createdAtDate || (e.createdAt?.seconds ? new Date(e.createdAt.seconds * 1000) : null);
+        if (!evalDate) return false;
         return evalDate.getDate() === d.getDate() && evalDate.getMonth() === d.getMonth() && evalDate.getFullYear() === d.getFullYear();
       }).length,
     };
@@ -99,40 +100,60 @@ const EvaluationsPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      const evaluationsQuery = query(collection(db, 'evaluations'));
-      const evaluationsSnapshot = await getDocs(evaluationsQuery);
-      const evaluationsData = await Promise.all(
-        evaluationsSnapshot.docs.map(async (evalDoc) => {
+      try {
+        // 1. Fetch all users once into a lookup map to avoid N+1 queries and missing docs
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const userMap = {};
+        usersSnapshot.forEach((uDoc) => {
+          userMap[uDoc.id] = uDoc.data();
+        });
+
+        // 2. Fetch evaluations
+        const evaluationsQuery = query(collection(db, 'evaluations'));
+        const evaluationsSnapshot = await getDocs(evaluationsQuery);
+        const evaluationsData = evaluationsSnapshot.docs.map((evalDoc) => {
           const evaluation = evalDoc.data();
-          const refereeDoc = await getDoc(doc(db, 'users', evaluation.refereeId));
-          const evaluatorDoc = await getDoc(doc(db, 'users', evaluation.evaluatorId));
+          const rId = evaluation.refereeId || (Array.isArray(evaluation.refereeIds) ? evaluation.refereeIds[0] : null);
+          const eId = evaluation.evaluatorId;
+          const referee = rId ? userMap[rId] : null;
+          const evaluator = eId ? userMap[eId] : null;
+          const refName = referee?.displayName || evaluation.refereeName || (Array.isArray(evaluation.refereeNames) ? evaluation.refereeNames.join(', ') : 'Unknown');
+          const evalName = evaluator?.displayName || evaluation.evaluatorName || 'Unknown';
+          const tier = referee?.tier || evaluation.tier || 'N/A';
+
           return {
-            id: doc.id,
+            id: evalDoc.id,
             ...evaluation,
-            refereeName: refereeDoc.data()?.displayName || 'Unknown',
-            evaluatorName: evaluatorDoc.data()?.displayName || 'Unknown',
-            tier: refereeDoc.data()?.tier || 'N/A',
-            tierColor: getTierColor(refereeDoc.data()?.tier || 'N/A'),
+            refereeName: refName,
+            evaluatorName: evalName,
+            tier: tier,
+            tierColor: getTierColor(tier),
+            createdAtDate: evaluation.createdAt?.seconds 
+              ? new Date(evaluation.createdAt.seconds * 1000) 
+              : (evaluation.gameDate ? new Date(evaluation.gameDate) : new Date()),
           };
-        })
-      );
-      setEvaluations(evaluationsData);
+        });
 
-      // Calculate stats
-      const totalEvaluations = evaluationsData.length;
-      const now = new Date();
-      const oneWeekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-      const thisWeekEvaluations = evaluationsData.filter(e => new Date(e.createdAt.seconds * 1000) > oneWeekAgo);
-      const totalScore = evaluationsData.reduce((acc, cur) => acc + cur.totalScore, 0);
-      const avgScore = totalEvaluations > 0 ? (totalScore / totalEvaluations).toFixed(1) : 0;
+        setEvaluations(evaluationsData);
 
-      setStats({
-        totalEvaluations,
-        thisWeek: thisWeekEvaluations.length,
-        avgScore,
-      });
+        // 3. Calculate stats safely
+        const totalEvaluations = evaluationsData.length;
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        const thisWeekEvaluations = evaluationsData.filter(e => e.createdAtDate >= oneWeekAgo);
+        const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
+        const avgScore = totalEvaluations > 0 ? (totalScore / totalEvaluations).toFixed(1) : '0.0';
 
-      setLoading(false);
+        setStats({
+          totalEvaluations,
+          thisWeek: thisWeekEvaluations.length,
+          avgScore,
+        });
+      } catch (error) {
+        console.error("Error fetching evaluations:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchData();
@@ -160,9 +181,10 @@ const EvaluationsPage = () => {
 
   // Filter evaluations
   const filteredEvaluations = evaluations.filter((evaluation) => {
-    const matchesSearch =
-      evaluation.refereeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      evaluation.evaluatorName.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = (searchQuery || '').toLowerCase();
+    const refName = (evaluation.refereeName || '').toLowerCase();
+    const evalName = (evaluation.evaluatorName || '').toLowerCase();
+    const matchesSearch = !q || refName.includes(q) || evalName.includes(q);
     const matchesTier = selectedTier === 'All Tiers' || evaluation.tier === selectedTier;
     return matchesSearch && matchesTier;
   });
@@ -412,7 +434,7 @@ const EvaluationsPage = () => {
                           className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
                         >
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            {new Date(evaluation.createdAt.seconds * 1000).toLocaleDateString()}
+                            {evaluation.createdAtDate ? evaluation.createdAtDate.toLocaleDateString() : 'N/A'}
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
                             {evaluation.evaluatorName}
@@ -574,19 +596,31 @@ const EvaluationsPage = () => {
               </h3>
 
               <div className='space-y-4 mb-6'>
-                {Object.entries(selectedEvaluation.comments).map(([category, comment]) => (
-                  <div
-                    key={category}
-                    className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'
-                  >
-                    <div className='text-fluid-lg font-semibold text-white text-body mb-2 capitalize'>
-                      {category.replace(/([A-Z])/g, ' $1')}
-                    </div>
-                    <div className='text-fluid-base text-[#9ca3af] text-body'>
-                      {comment}
-                    </div>
+                {selectedEvaluation.comments && typeof selectedEvaluation.comments === 'object' ? (
+                  Object.keys(selectedEvaluation.comments).length > 0 ? (
+                    Object.entries(selectedEvaluation.comments).map(([category, comment]) => (
+                      <div
+                        key={category}
+                        className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'
+                      >
+                        <div className='text-fluid-lg font-semibold text-white text-body mb-2 capitalize'>
+                          {category.replace(/([A-Z])/g, ' $1')}
+                        </div>
+                        <div className='text-fluid-base text-[#9ca3af] text-body'>
+                          {typeof comment === 'string' ? comment : JSON.stringify(comment)}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className='text-[#9ca3af] text-fluid-base'>No specific comments provided.</p>
+                  )
+                ) : (
+                  <div className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'>
+                    <p className='text-fluid-base text-[#9ca3af] text-body'>
+                      {selectedEvaluation.comments || selectedEvaluation.groupComment || 'No comments provided.'}
+                    </p>
                   </div>
-                ))}
+                )}
               </div>
 
               <div className='flex gap-3'>
