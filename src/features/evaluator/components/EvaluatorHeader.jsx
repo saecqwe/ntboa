@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
+import { HiUserGroup } from 'react-icons/hi';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/authentication/hooks/useAuth';
 import { signOut } from 'firebase/auth';
@@ -74,9 +75,19 @@ const EvaluatorHeader = ({
           </button>
         </div>
 
-        <h1 className='text-2xl lg:text-3xl font-bold text-white heading'>
-          NTBOA
-        </h1>
+        <div className='flex items-center gap-3 lg:gap-5'>
+          <h1 className='text-2xl lg:text-3xl font-bold text-white heading'>
+            NTBOA
+          </h1>
+          <Link
+            href='/evaluator/referees'
+            className='flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-all border border-white/10'
+            title='Manage Referees'
+          >
+            <HiUserGroup className='w-4 h-4' />
+            <span className='hidden sm:inline'>Referees</span>
+          </Link>
+        </div>
 
         <Link
           href='/evaluator/profile'

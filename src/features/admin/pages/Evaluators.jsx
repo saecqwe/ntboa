@@ -2,9 +2,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
+import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, functions } from '@/services/firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
@@ -167,14 +167,14 @@ const EvaluatorsPage = () => {
 
   const handleDeleteEvaluator = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this evaluator? This will disable their account.')) {
+    if (window.confirm('Are you sure you want to remove this evaluator? Their account will be removed and disabled, but history is kept.')) {
       try {
-        const suspendUser = httpsCallable(functions, 'suspendUser');
-        await suspendUser({ uid: id });
-        toast.success("Evaluator account suspended.");
+        const suspendUserFn = httpsCallable(functions, 'suspendUser');
+        await suspendUserFn({ uid: id });
+        toast.success('Evaluator account removed successfully.');
       } catch (error) {
-        console.error('Error suspending evaluator:', error);
-        toast.error("Failed to suspend evaluator.");
+        console.error('Error removing evaluator:', error);
+        toast.error('Failed to remove evaluator: ' + error.message);
       }
     }
   };

@@ -6,7 +6,7 @@ import { FaStar, FaTrophy } from 'react-icons/fa';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
-import { getDashboardData } from '@/features/evaluator/services/dashboardService';
+import { subscribeToDashboardData } from '@/features/evaluator/services/dashboardService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const EvaluatorHome = () => {
@@ -68,21 +68,24 @@ const EvaluatorHome = () => {
     };
   }, []);
 
-  // Fetch dashboard data
+  // Subscribe to real-time dashboard data (auto-updates when assignments change)
   useEffect(() => {
-    const loadData = async () => {
-      if (user) {
-        try {
-          const data = await getDashboardData(user.uid);
-          setDashboardData(data);
-        } catch (error) {
-          console.error('Failed to load dashboard data:', error);
-        } finally {
-          setIsLoading(false);
-        }
+    if (!user) return;
+
+    setIsLoading(true);
+    const unsubscribe = subscribeToDashboardData(
+      user.uid,
+      (data) => {
+        setDashboardData(data);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Failed to load dashboard data:', error);
+        setIsLoading(false);
       }
-    };
-    loadData();
+    );
+
+    return () => unsubscribe();
   }, [user]);
 
   const statsCards = [

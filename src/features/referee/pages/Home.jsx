@@ -6,7 +6,7 @@ import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { db, auth } from '@/services/firebase/config';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 
 const RefereeDashboardPage = () => {
@@ -40,81 +40,81 @@ const RefereeDashboardPage = () => {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!userData) {
-        // Wait for auth
-        return;
-      }
+    if (!userData) return;
 
-      try {
-        setLoading(true);
+    setLoading(true);
+    const now = new Date();
 
-        // 1. Fetch Assignments for Upcoming Game
-        const qAssignments = query(
-          collection(db, 'assignments'),
-          where('refereeIds', 'array-contains', userData.uid)
-        );
-        const assignSnap = await getDocs(qAssignments);
-        const assignments = assignSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // ── Real-time listener: Assignments ──────────────────────────────────────
+    const qAssignments = query(
+      collection(db, 'assignments'),
+      where('refereeIds', 'array-contains', userData.uid)
+    );
 
-        // Find next upcoming
-        const now = new Date();
-        const futureAssignments = assignments
-          .filter(a => {
-            const d = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
-            return d > now;
-          })
-          .sort((a, b) => {
-            const dA = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
-            const dB = b.scheduledDate?.toDate ? b.scheduledDate.toDate() : new Date(b.scheduledDate);
-            return dA - dB;
-          });
+    const unsubscribeAssignments = onSnapshot(qAssignments, (assignSnap) => {
+      const assignments = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        if (futureAssignments.length > 0) {
-          const next = futureAssignments[0];
-          const d = next.scheduledDate?.toDate ? next.scheduledDate.toDate() : new Date(next.scheduledDate);
-          setUpcomingGame({
-            date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-            location: next.location || 'TBD'
-          });
-        } else {
-          setUpcomingGame(null);
-        }
-
-        // 2. Fetch Evaluations for Stats
-        const qEvals = query(collection(db, 'evaluations'), where('refereeId', '==', userData.uid));
-        const evalSnap = await getDocs(qEvals);
-        const total = evalSnap.size;
-        let sumScore = 0;
-        evalSnap.forEach(doc => {
-          const data = doc.data();
-          // Assuming score is 0-10 or 0-100. Adjust based on your evaluation schema.
-          // If overallScore is not present, check for average of categories.
-          sumScore += (data.overallScore || data.totalScore || 0);
+      // Find next upcoming game
+      const futureAssignments = assignments
+        .filter((a) => {
+          const d = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
+          return d > now;
+        })
+        .sort((a, b) => {
+          const dA = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
+          const dB = b.scheduledDate?.toDate ? b.scheduledDate.toDate() : new Date(b.scheduledDate);
+          return dA - dB;
         });
 
-        // Tier Logic (Mockup based on userData or calculated)
-        // You might want to store current tier points in userData
-        const currentTierPoints = userData.tierPoints || 150;
-
-        setStats({
-          totalEvaluations: total,
-          averageScore: total > 0 ? (sumScore / total).toFixed(2) : 0,
-          averageDelta: '+1.2%', // This requires historical comparison, leaving static for now or can be 0
-          tierProgress: currentTierPoints,
-          tierMin: 100, // Example
-          tierMax: 300  // Example
+      if (futureAssignments.length > 0) {
+        const next = futureAssignments[0];
+        const d = next.scheduledDate?.toDate ? next.scheduledDate.toDate() : new Date(next.scheduledDate);
+        setUpcomingGame({
+          date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+          time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+          location: next.location || 'TBD',
         });
-
-      } catch (err) {
-        console.error("Error fetching dashboard data:", err);
-      } finally {
-        setLoading(false);
+      } else {
+        setUpcomingGame(null);
       }
+
+      setLoading(false);
+    }, (err) => {
+      console.error('Error in assignments listener:', err);
+      setLoading(false);
+    });
+
+    // ── Real-time listener: Evaluations ──────────────────────────────────────
+    const qEvals = query(
+      collection(db, 'evaluations'),
+      where('refereeId', '==', userData.uid)
+    );
+
+    const unsubscribeEvals = onSnapshot(qEvals, (evalSnap) => {
+      const total = evalSnap.size;
+      let sumScore = 0;
+      evalSnap.forEach((doc) => {
+        const data = doc.data();
+        sumScore += data.overallScore || data.totalScore || 0;
+      });
+
+      const currentTierPoints = userData.tierPoints || 150;
+      setStats({
+        totalEvaluations: total,
+        averageScore: total > 0 ? (sumScore / total).toFixed(2) : 0,
+        averageDelta: '+1.2%',
+        tierProgress: currentTierPoints,
+        tierMin: 100,
+        tierMax: 300,
+      });
+    }, (err) => {
+      console.error('Error in evaluations listener:', err);
+    });
+
+    return () => {
+      unsubscribeAssignments();
+      unsubscribeEvals();
     };
-
-    fetchData();
   }, [userData]);
 
   // Derived display values

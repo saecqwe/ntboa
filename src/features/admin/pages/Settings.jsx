@@ -3,6 +3,8 @@
 import React, { useState, useCallback } from 'react';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { changeUserPassword } from '@/features/authentication/services/authService';
 import {
   HiMenu,
   HiOutlineUser,
@@ -19,37 +21,52 @@ const SETTING_SECTIONS = [
 ];
 
 const SettingsPage = () => {
+  const { user, userData } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('profile');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [profilePhoto, setProfilePhoto] = useState(null);
   const fileInputRef = React.useRef(null);
 
-  // Profile data
+  // Profile data – seeded from real auth user, with localStorage override
   const [profileData, setProfileData] = useState({
-    firstName: 'Admin',
-    lastName: 'User',
-    email: 'admin@ntboa.org',
-    phone: '+1 (555) 123-4567',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
     role: 'Administrator',
     profilePhotoUrl: null,
   });
 
-  // Load profile data from localStorage on component mount
+  // Seed profile from real Firebase user, with localStorage override
   React.useEffect(() => {
     const savedProfile = localStorage.getItem('ntboa_admin_profile');
     if (savedProfile) {
       try {
         const parsedProfile = JSON.parse(savedProfile);
         setProfileData(parsedProfile);
+        return;
       } catch (error) {
-        console.error('Error loading profile data:', error);
+        console.error('Error loading saved profile:', error);
       }
     }
-  }, []);
+    // Fallback: seed from Firebase Auth / Firestore userData
+    if (user || userData) {
+      const displayName = userData?.displayName || user?.displayName || '';
+      const nameParts = displayName.trim().split(' ');
+      setProfileData((prev) => ({
+        ...prev,
+        firstName: nameParts[0] || 'Admin',
+        lastName: nameParts.slice(1).join(' ') || '',
+        email: userData?.email || user?.email || '',
+        phone: userData?.phone || '',
+      }));
+    }
+  }, [user, userData]);
 
   // Password data
   const [passwordData, setPasswordData] = useState({
@@ -84,21 +101,38 @@ const SettingsPage = () => {
   }, [profileData]);
 
   const handlePasswordReset = useCallback(async () => {
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      alert('New password and confirm password do not match');
+    setPasswordError('');
+
+    if (!passwordData.currentPassword) {
+      setPasswordError('Please enter your current password.');
       return;
     }
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters.');
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('New password and confirm password do not match.');
+      return;
+    }
+
     setSaveStatus('saving');
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Real Firebase Auth password update (re-authenticates first)
+      await changeUserPassword(passwordData.currentPassword, passwordData.newPassword);
       setSaveStatus('saved');
-      setPasswordData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-      });
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setTimeout(() => setSaveStatus(''), 3000);
-    }, 1000);
+    } catch (error) {
+      setSaveStatus('');
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        setPasswordError('Current password is incorrect.');
+      } else if (error.code === 'auth/weak-password') {
+        setPasswordError('New password is too weak. Choose a stronger password.');
+      } else {
+        setPasswordError('Failed to update password: ' + (error.message || 'Please try again.'));
+      }
+    }
   }, [passwordData]);
 
   const handlePhotoClick = useCallback(() => {
@@ -284,6 +318,11 @@ const SettingsPage = () => {
           Change Password
         </h3>
         <p className='text-sm sm:text-base text-gray-400 mb-4 sm:mb-6'>
+          {passwordError && (
+            <span className='block bg-red-900/40 border border-red-700/50 text-red-300 rounded-lg px-4 py-3 text-sm mb-4'>
+              {passwordError}
+            </span>
+          )}
           Update your password to keep your account secure.
         </p>
 

@@ -207,6 +207,9 @@ const EvaluationFormContent = () => {
       return;
     }
 
+    // NEW: Detect mobile browsers to prevent aggressive auto-restarts
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
     // Stop any active recording from other categories
     if (activeRecordingId && activeRecordingId !== categoryId) {
       stopSpeechRecognition(activeRecordingId);
@@ -229,17 +232,20 @@ const EvaluationFormContent = () => {
     recognition.lang = 'en-US';
     recognition.maxAlternatives = 1;
 
-    let finalTranscript = getCurrentComments()[categoryId] || '';
+    // FIX: Separate base text from the current session's text.
+    // This prevents duplicated words when auto-restarts capture old state.
+    let baseTranscript = getCurrentComments()[categoryId] || '';
+    let sessionTranscript = '';
     let restartTimeout = null;
 
     recognition.onstart = () => {
       setIsRecording((prev) => ({
         ...prev,
-        [`${tabKey}_${categoryId}`]: true,
+        [recognitionKey]: true,
       }));
       setRecordingStatus((prev) => ({
         ...prev,
-        [`${tabKey}_${categoryId}`]: 'Listening...',
+        [recognitionKey]: 'Listening...',
       }));
       setActiveComment(categoryId);
     };
@@ -247,14 +253,14 @@ const EvaluationFormContent = () => {
     recognition.onspeechstart = () => {
       setRecordingStatus((prev) => ({
         ...prev,
-        [`${tabKey}_${categoryId}`]: 'Speech detected',
+        [recognitionKey]: 'Speech detected',
       }));
     };
 
     recognition.onspeechend = () => {
       setRecordingStatus((prev) => ({
         ...prev,
-        [categoryId]: 'Processing...',
+        [recognitionKey]: 'Processing...',
       }));
     };
 
@@ -265,15 +271,17 @@ const EvaluationFormContent = () => {
         const transcript = event.results[i][0].transcript;
 
         if (event.results[i].isFinal) {
-          finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+          // FIX: Append to sessionTranscript instead of a global finalTranscript
+          sessionTranscript += (sessionTranscript ? ' ' : '') + transcript;
         } else {
           interimTranscript += transcript;
         }
       }
 
-      // Update comments with final transcript or show interim
-      const displayText =
-        finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+      // FIX: Safely combine base text (before start), finalized session text, and interim text
+      const displayText = [baseTranscript, sessionTranscript, interimTranscript]
+        .filter(Boolean)
+        .join(' ');
 
       setComments((prev) => ({
         ...prev,
@@ -290,7 +298,7 @@ const EvaluationFormContent = () => {
       ) {
         setRecordingStatus((prev) => ({
           ...prev,
-          [`${tabKey}_${categoryId}`]: 'Transcribing...',
+          [recognitionKey]: 'Transcribing...',
         }));
       }
     };
@@ -308,7 +316,7 @@ const EvaluationFormContent = () => {
       ) {
         setIsRecording((prev) => ({
           ...prev,
-          [`${tabKey}_${categoryId}`]: false,
+          [recognitionKey]: false,
         }));
         setActiveRecordingId(null);
         alert(
@@ -316,32 +324,43 @@ const EvaluationFormContent = () => {
         );
         recognitionRef.current[recognitionKey] = null;
       } else if (event.error === 'no-speech') {
-        // No speech detected - try to restart automatically
-        restartTimeout = setTimeout(() => {
-          if (recognitionRef.current[recognitionKey] === recognition) {
-            try {
-              recognition.start();
-            } catch (e) {
-              setIsRecording((prev) => ({
-                ...prev,
-                [`${tabKey}_${categoryId}`]: false,
-              }));
-              setActiveRecordingId(null);
+        // FIX: Mobile browsers forcefully drop the mic on silence.
+        // Auto-restarting on mobile creates an infinite on/off cycle and beep sound.
+        if (isMobile) {
+          setIsRecording((prev) => ({
+            ...prev,
+            [recognitionKey]: false,
+          }));
+          setActiveRecordingId(null);
+          recognitionRef.current[recognitionKey] = null;
+        } else {
+          // Desktop behavior: safe to auto-restart
+          restartTimeout = setTimeout(() => {
+            if (recognitionRef.current[recognitionKey] === recognition) {
+              try {
+                recognition.start();
+              } catch (e) {
+                setIsRecording((prev) => ({
+                  ...prev,
+                  [recognitionKey]: false,
+                }));
+                setActiveRecordingId(null);
+              }
             }
-          }
-        }, 100);
+          }, 100);
+        }
       } else if (event.error === 'aborted') {
         // Recognition was aborted - user stopped it
         setIsRecording((prev) => ({
           ...prev,
-          [`${tabKey}_${categoryId}`]: false,
+          [recognitionKey]: false,
         }));
         setActiveRecordingId(null);
         recognitionRef.current[recognitionKey] = null;
       } else if (event.error === 'audio-capture') {
         setIsRecording((prev) => ({
           ...prev,
-          [`${tabKey}_${categoryId}`]: false,
+          [recognitionKey]: false,
         }));
         setActiveRecordingId(null);
         alert(
@@ -354,7 +373,7 @@ const EvaluationFormContent = () => {
       } else if (event.error === 'network') {
         setIsRecording((prev) => ({
           ...prev,
-          [`${tabKey}_${categoryId}`]: false,
+          [recognitionKey]: false,
         }));
         setActiveRecordingId(null);
         alert('Network error occurred. Please check your internet connection.');
@@ -370,23 +389,30 @@ const EvaluationFormContent = () => {
 
       // Check if we should restart (user didn't manually stop)
       if (recognitionRef.current[recognitionKey] === recognition) {
-        // Try to restart if still active
-        restartTimeout = setTimeout(() => {
-          if (recognitionRef.current[recognitionKey] === recognition) {
-            try {
-              recognition.start();
-            } catch (e) {
-              setIsRecording((prev) => ({
-                ...prev,
-                [`${tabKey}_${categoryId}`]: false,
-              }));
-              setActiveRecordingId(null);
-              recognitionRef.current[categoryId] = null;
+        // FIX: Prevent aggressive auto-restart loop on mobile devices when browser terminates session
+        if (isMobile) {
+          setIsRecording((prev) => ({ ...prev, [recognitionKey]: false }));
+          setActiveRecordingId(null);
+          recognitionRef.current[recognitionKey] = null;
+        } else {
+          // Try to restart if still active (Desktop only)
+          restartTimeout = setTimeout(() => {
+            if (recognitionRef.current[recognitionKey] === recognition) {
+              try {
+                recognition.start();
+              } catch (e) {
+                setIsRecording((prev) => ({
+                  ...prev,
+                  [recognitionKey]: false,
+                }));
+                setActiveRecordingId(null);
+                recognitionRef.current[recognitionKey] = null;
+              }
             }
-          }
-        }, 100);
+          }, 100);
+        }
       } else {
-        setIsRecording((prev) => ({ ...prev, [categoryId]: false }));
+        setIsRecording((prev) => ({ ...prev, [recognitionKey]: false }));
         setActiveRecordingId(null);
       }
     };
@@ -398,7 +424,7 @@ const EvaluationFormContent = () => {
     } catch (error) {
       setIsRecording((prev) => ({
         ...prev,
-        [`${tabKey}_${categoryId}`]: false,
+        [recognitionKey]: false,
       }));
       setActiveRecordingId(null);
       alert('Failed to start speech recognition. Please try again.');

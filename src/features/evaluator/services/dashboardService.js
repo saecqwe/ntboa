@@ -1,5 +1,5 @@
 import { db } from '@/services/firebase/config';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 export const getDashboardData = async (userId) => {
   if (!userId) {
@@ -211,4 +211,40 @@ export const getDashboardData = async (userId) => {
     console.error('Error fetching dashboard data:', error);
     throw error;
   }
+};
+
+/**
+ * Subscribes to real-time assignment updates for an evaluator.
+ * Calls the callback with fresh dashboard data every time assignments change.
+ *
+ * @param {string} userId - The evaluator's UID.
+ * @param {function} callback - Called with the full dashboard data object on every update.
+ * @param {function} onError - Called if there is a Firestore error.
+ * @returns {function} unsubscribe - Call this to stop listening (use in useEffect cleanup).
+ */
+export const subscribeToDashboardData = (userId, callback, onError) => {
+  if (!userId) return () => {};
+
+  const assignmentsRef = collection(db, 'assignments');
+  const q = query(assignmentsRef, where('evaluatorId', '==', userId));
+
+  const unsubscribe = onSnapshot(
+    q,
+    async () => {
+      // Re-fetch the full dashboard whenever assignments change
+      try {
+        const data = await getDashboardData(userId);
+        callback(data);
+      } catch (err) {
+        console.error('Error refreshing dashboard data:', err);
+        if (onError) onError(err);
+      }
+    },
+    (error) => {
+      console.error('onSnapshot error on assignments:', error);
+      if (onError) onError(error);
+    }
+  );
+
+  return unsubscribe;
 };

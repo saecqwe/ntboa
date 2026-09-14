@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, getDocs, orderBy } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
+import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp, getDocs, orderBy } from 'firebase/firestore';
 import { createUser } from '@/features/authentication/services/authService';
 import { db, functions } from '@/services/firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
@@ -239,14 +239,14 @@ const RefereesPage = () => {
 
   const handleDeleteReferee = async (id, e) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this referee? This will disable their account but keep their history.')) {
+    if (window.confirm('Are you sure you want to remove this referee? Their account will be removed and disabled, but history is kept.')) {
       try {
-        const suspendUser = httpsCallable(functions, 'suspendUser');
-        await suspendUser({ uid: id });
-        toast.success("Referee account suspended/deleted.");
+        const suspendUserFn = httpsCallable(functions, 'suspendUser');
+        await suspendUserFn({ uid: id });
+        toast.success('Referee account removed successfully.');
       } catch (error) {
-        console.error('Error suspending referee:', error);
-        toast.error("Failed to suspend referee.");
+        console.error('Error removing referee:', error);
+        toast.error('Failed to remove referee: ' + error.message);
       }
     }
   };

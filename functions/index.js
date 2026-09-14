@@ -1,4 +1,5 @@
-const { logger, https } = require("firebase-functions");
+const { logger } = require("firebase-functions");
+const https = require("firebase-functions/v1").https;
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
@@ -114,10 +115,10 @@ exports.suspendUser = https.onCall(async (data, context) => {
     // If user is not found in Auth, we might still want to ensure Firestore is updated
     if (error.code === 'auth/user-not-found') {
        logger.warn(`User ${uid} not found in Auth, proceeding to mark Firestore doc as Disabled.`);
-       await db.collection('users').doc(uid).update({
+       await db.collection('users').doc(uid).set({
         status: 'Disabled',
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      }, { merge: true }); // merge:true handles missing docs gracefully
       return { success: true, message: 'User was not in Auth, but marked as Disabled in DB.' };
     }
     throw new https.HttpsError('internal', 'Unable to suspend user.');
