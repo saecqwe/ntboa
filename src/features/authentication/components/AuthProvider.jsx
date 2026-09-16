@@ -18,11 +18,37 @@ export const AuthProvider = ({ children }) => {
   }, [user]);
 
   useEffect(() => {
-    const unsubscribe = onAuthObserver(async (user) => {
-      if (user) {
-        const data = await getUserDocument(user.uid);
-        setUserData(data);
-        setUser(user);
+    const unsubscribe = onAuthObserver(async (currentUser) => {
+      if (currentUser) {
+        try {
+          // Force token refresh check against Firebase Auth backend
+          await currentUser.getIdToken(true);
+          const data = await getUserDocument(currentUser.uid);
+
+          // If the account document no longer exists in Firestore or is disabled
+          if (!data || data.status === 'Disabled') {
+            console.warn("Account is inactive or deleted. Clearing session...");
+            await logout();
+            if (typeof window !== 'undefined') {
+              localStorage.clear();
+              sessionStorage.clear();
+            }
+            setUser(null);
+            setUserData(null);
+          } else {
+            setUserData(data);
+            setUser(currentUser);
+          }
+        } catch (error) {
+          console.warn("Auth token invalid or user removed from Firebase Auth:", error);
+          await logout().catch(() => {});
+          if (typeof window !== 'undefined') {
+            localStorage.clear();
+            sessionStorage.clear();
+          }
+          setUser(null);
+          setUserData(null);
+        }
       } else {
         setUser(null);
         setUserData(null);

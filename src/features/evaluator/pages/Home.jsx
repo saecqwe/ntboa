@@ -10,17 +10,35 @@ import { subscribeToDashboardData } from '@/features/evaluator/services/dashboar
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 
 const EvaluatorHome = () => {
-  const { user } = useAuth();
+  const { user, userData: authUserData, loading: authLoading } = useAuth();
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState('upcoming'); // Default to upcoming/today view
   
-  // Profile data state
-  const [userData, setUserData] = useState({
-    name: 'John',
-    initials: 'JS',
-  });
-  
-  // Dashboard data state
+  // Profile data derived directly from authUserData
+  const userData = React.useMemo(() => {
+    if (authUserData?.displayName) {
+      const name = authUserData.displayName;
+      const initials = name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+      return { name, initials };
+    }
+    return { name: 'Evaluator', initials: 'EV' };
+  }, [authUserData]);
+
+  // Auth guard: redirect to login if not authenticated or not an evaluator
+  useEffect(() => {
+    if (!authLoading) {
+      if (!user || (authUserData && authUserData.role !== 'evaluator')) {
+        router.replace('/evaluator/login');
+      }
+    }
+  }, [user, authUserData, authLoading, router]);
+
+    // Dashboard data state
   const [dashboardData, setDashboardData] = useState({
     stats: {
       assignmentsToday: 0,
@@ -33,40 +51,6 @@ const EvaluatorHome = () => {
     quickOverview: { thisMonth: 0, completionRate: '0%' },
   });
   const [isLoading, setIsLoading] = useState(true);
-
-  // Load profile data from localStorage
-  useEffect(() => {
-    const savedProfile = localStorage.getItem('evaluatorProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setUserData({
-        name: profile.name || 'John',
-        initials: profile.initials || 'JS',
-      });
-    }
-  }, []);
-
-  // Listen for profile updates
-  useEffect(() => {
-    const handleProfileUpdate = () => {
-      const savedProfile = localStorage.getItem('evaluatorProfile');
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        setUserData({
-          name: profile.name || 'John',
-          initials: profile.initials || 'JS',
-        });
-      }
-    };
-
-    window.addEventListener('storage', handleProfileUpdate);
-    window.addEventListener('profileUpdated', handleProfileUpdate);
-
-    return () => {
-      window.removeEventListener('storage', handleProfileUpdate);
-      window.removeEventListener('profileUpdated', handleProfileUpdate);
-    };
-  }, []);
 
   // Subscribe to real-time dashboard data (auto-updates when assignments change)
   useEffect(() => {

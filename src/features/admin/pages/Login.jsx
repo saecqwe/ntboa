@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import { HiOutlineMail, HiOutlineLockClosed } from 'react-icons/hi';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { login, getUserDocument } from '@/features/authentication/services/authService';
+import { login, logout, getUserDocument } from '@/features/authentication/services/authService';
 
 const AdminLoginPage = () => {
   const router = useRouter();
@@ -31,10 +31,13 @@ const AdminLoginPage = () => {
         if (userData?.role === 'admin') {
           router.push('/admin/dashboard');
         } else {
+          await logout();
+          if (typeof window !== 'undefined') {
+            localStorage.clear();
+            sessionStorage.clear();
+          }
           alert('You are not authorized to access this page.');
           setIsLoading(false);
-          // It's good practice to sign out the user if they are not authorized
-          // await logout(); 
         }
       }
     } catch (error) {

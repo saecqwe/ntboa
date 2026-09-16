@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { login, getUserDocument } from '@/features/authentication/services/authService';
+import { login, logout, getUserDocument } from '@/features/authentication/services/authService';
 
 const LoginPage = () => {
   const router = useRouter();
@@ -47,13 +47,16 @@ const LoginPage = () => {
       const userCredential = await login(email, password);
       if (userCredential.user) {
         const userData = await getUserDocument(userCredential.user.uid);
-        if (userData?.role === 'evaluator') {
+        if (userData?.role === 'evaluator' && userData?.status !== 'Disabled') {
           router.push('/evaluator/home');
         } else {
-          alert('You are not authorized to access this page.');
+          await logout();
+          if (typeof window !== 'undefined') {
+            localStorage.clear();
+            sessionStorage.clear();
+          }
+          alert('You are not authorized to access this page or your account has been deactivated.');
           setIsLoading(false);
-          // Optional: sign out the user if they don't have the correct role
-          // await logout();
         }
       }
     } catch (error) {
