@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
@@ -20,6 +20,33 @@ const AssignmentsPage = () => {
   const [location, setLocation] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
+  const timeDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (timeDropdownRef.current && !timeDropdownRef.current.contains(event.target)) {
+        setIsTimeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+  const timeOptions = useMemo(() => {
+    const options = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        const hour = h.toString().padStart(2, "0");
+        const minute = m.toString().padStart(2, "0");
+        const value = hour + ":" + minute;
+        const ampm = h >= 12 ? "PM" : "AM";
+        const displayHour = h % 12 || 12;
+        const label = displayHour + ":" + minute + " " + ampm;
+        options.push({ value, label });
+      }
+    }
+    return options;
+  }, []);
 
   // Data State
   const [evaluators, setEvaluators] = useState([]);
@@ -111,21 +138,7 @@ const AssignmentsPage = () => {
     return ids;
   }, [selectedEvaluator, assignments, date]);
 
-  const timeOptions = useMemo(() => {
-    const options = [];
-    for (let h = 0; h < 24; h++) {
-      for (let m = 0; m < 60; m += 15) {
-        const hour = h.toString().padStart(2, '0');
-        const minute = m.toString().padStart(2, '0');
-        const value = `${hour}:${minute}`;
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const displayHour = h % 12 || 12;
-        const label = `${displayHour}:${minute} ${ampm}`;
-        options.push({ value, label });
-      }
-    }
-    return options;
-  }, []);
+  
 
   const filteredEvaluators = evaluators.filter((ev) =>
     ev.displayName?.toLowerCase().includes(evaluatorSearch.toLowerCase())
@@ -169,8 +182,7 @@ const AssignmentsPage = () => {
       const docRef = await addDoc(collection(db, 'assignments'), newAssignment);
       setAssignments(prev => [...prev, { id: docRef.id, ...newAssignment }]);
       setSelectedReferees([]);
-      setLocation('');
-      setTime('');
+      // Retaining last assigned location and time for multi-assignment convenience
       alert('Assignment created successfully!');
     } catch (error) {
       console.error("Error creating assignment:", error);
@@ -234,14 +246,57 @@ const AssignmentsPage = () => {
                     <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiCalendar /> Date <span className='text-red-500'>*</span></label>
                     <input type='date' value={date} onChange={(e) => setDate(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] scheme-dark focus:ring-2 focus:ring-accent outline-none' />
                   </div>
-                  <div className='space-y-2'>
-                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiClock /> Time <span className='text-red-500'>*</span></label>
-                    <select value={time} onChange={(e) => setTime(e.target.value)} className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] outline-none appearance-none'>
-                      <option value="">Select Time</option>
-                      {timeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                  <div className='space-y-2 relative' ref={timeDropdownRef}>
+                    <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'>
+                      <FiClock /> Time <span className='text-red-500'>*</span>
+                    </label>
+                    <div className='relative flex items-center'>
+                      <input
+                        type='time'
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
+                        className='w-full bg-[#2a2a2a] text-white rounded-xl px-4 py-3 border border-[#3a3a3a] scheme-dark focus:ring-2 focus:ring-accent outline-none pr-10'
+                      />
+                      <button
+                        type='button'
+                        title='Choose from time list'
+                        onClick={() => setIsTimeDropdownOpen((prev) => !prev)}
+                        className='absolute right-2.5 p-1 text-[#9ca3af] hover:text-white rounded-md hover:bg-white/10 transition-colors'
+                      >
+                        <HiChevronDown className={`w-5 h-5 transition-transform duration-150 ${isTimeDropdownOpen ? "rotate-180 text-accent" : ""}`} />
+                      </button>
+                    </div>
+
+                    {isTimeDropdownOpen && (
+                      <div className='absolute left-0 right-0 top-full mt-1 z-50 bg-[#262626] border border-[#3a3a3a] rounded-xl shadow-2xl overflow-hidden'>
+                        <div className='p-2.5 bg-[#202020] border-b border-[#3a3a3a] flex items-center justify-between text-xs text-[#9ca3af]'>
+                          <span className='font-medium text-white'>Select Time Slot</span>
+                          <span className='text-accent'>15 min intervals</span>
+                        </div>
+                        <div className='max-h-48 overflow-y-auto p-1.5 grid grid-cols-2 sm:grid-cols-3 gap-1.5 hide-scrollbar'>
+                          {timeOptions.map((opt) => {
+                            const isSelected = time === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type='button'
+                                onClick={() => {
+                                  setTime(opt.value);
+                                  setIsTimeDropdownOpen(false);
+                                }}
+                                className={`text-xs py-2 px-2 rounded-lg text-center font-medium transition-all ${
+                                  isSelected
+                                    ? "bg-accent text-white font-semibold shadow-sm"
+                                    : "bg-[#2f2f2f] text-gray-200 hover:bg-[#3a3a3a] hover:text-white"
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className='space-y-2'>
                     <label className='text-sm text-[#9ca3af] font-medium flex items-center gap-2'><FiMapPin /> Location <span className='text-red-500'>*</span></label>

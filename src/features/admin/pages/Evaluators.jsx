@@ -19,6 +19,7 @@ const EvaluatorsPage = () => {
   
   // Data State
   const [evaluators, setEvaluators] = useState([]);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -179,6 +180,13 @@ const EvaluatorsPage = () => {
     }
   };
 
+  const filteredEvaluators = evaluators.filter((evaluator) => {
+    if (!showDeleted && evaluator.status === 'Disabled') {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
       <Toaster />
@@ -209,8 +217,32 @@ const EvaluatorsPage = () => {
         {/* Content */}
         <div className='p-4 lg:p-8'>
           <div className='max-w-7xl mx-auto'>
-            {/* Top Bar - Add Button */}
-            <div className='flex justify-end mb-6'>
+            {/* Top Bar - Controls */}
+            <div className='flex flex-wrap items-center justify-between gap-4 mb-6'>
+              {/* Show Deleted Toggle */}
+              <label className='flex items-center gap-3 cursor-pointer select-none bg-[#2a2a2a] border border-[#3a3a3a] px-4 py-2.5 rounded-lg hover:border-[#4a4a4a] transition-colors'>
+                <span className='text-fluid-sm text-[#9ca3af] font-medium'>
+                  Show Deleted
+                </span>
+                <button
+                  type='button'
+                  role='switch'
+                  aria-checked={showDeleted}
+                  onClick={() => setShowDeleted((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    showDeleted ? 'bg-accent' : 'bg-[#4a4a4a]'
+                  }`}
+                >
+                  <span
+                    aria-hidden='true'
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      showDeleted ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </label>
+
+              {/* Add Evaluator Button */}
               <button
                 onClick={handleAddEvaluator}
                 className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base whitespace-nowrap'
@@ -252,14 +284,21 @@ const EvaluatorsPage = () => {
                           </p>
                         </td>
                       </tr>
-                    ) : evaluators.length > 0 ? (
-                      evaluators.map((evaluator) => (
+                    ) : filteredEvaluators.length > 0 ? (
+                      filteredEvaluators.map((evaluator) => (
                         <tr
                           key={evaluator.id}
                           className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
                         >
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            {evaluator.displayName}
+                            <div className='flex items-center gap-2'>
+                              <span>{evaluator.displayName}</span>
+                              {evaluator.status === 'Disabled' && (
+                                <span className='text-xs font-semibold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30'>
+                                  Suspended
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
                             {evaluator.email}
@@ -298,7 +337,9 @@ const EvaluatorsPage = () => {
                       <tr>
                         <td colSpan='5' className='text-center py-12'>
                           <p className='text-[15px] text-[#6b7280] text-body'>
-                            No evaluators found.
+                            {evaluators.length > 0 && !showDeleted
+                              ? 'No active evaluators found.'
+                              : 'No evaluators found.'}
                           </p>
                         </td>
                       </tr>
@@ -310,7 +351,7 @@ const EvaluatorsPage = () => {
               {/* Footer */}
               <div className='px-4 lg:px-6 py-4 border-t border-[#3a3a3a]'>
                 <p className='text-fluid-base text-white text-body text-center'>
-                  Showing {evaluators.length} evaluators
+                  Showing {filteredEvaluators.length} {filteredEvaluators.length === 1 ? 'evaluator' : 'evaluators'}
                 </p>
               </div>
             </div>
