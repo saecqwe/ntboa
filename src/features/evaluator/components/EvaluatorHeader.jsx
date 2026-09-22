@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import { HiUserGroup } from 'react-icons/hi';
@@ -17,10 +18,6 @@ const EvaluatorHeader = ({
 }) => {
   const router = useRouter();
   const { userData } = useAuth();
-  const [profileData, setProfileData] = useState({
-    initials: userInitials,
-    photo: null,
-  });
 
   const handleLogout = async () => {
     try {
@@ -31,81 +28,70 @@ const EvaluatorHeader = ({
     }
   };
 
-  useEffect(() => {
-    const name = userData?.name || userInitials;
-    const initials = name
-      ? name
-          .trim()
-          .split(' ')
-          .filter((n) => n.length > 0)
-          .map((part) => part.charAt(0).toUpperCase())
-          .join('')
-          .slice(0, 2)
-      : userInitials;
+  // Derive initials and photo directly without cascading renders
+  const name = userData?.displayName || userData?.name || userName;
+  const initials = name
+    ? name
+        .trim()
+        .split(' ')
+        .filter((n) => n.length > 0)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('')
+        .slice(0, 2)
+    : userInitials;
 
-    let photo = userData?.photo || null;
-
-    if (!photo && typeof window !== 'undefined') {
-      const savedProfile = localStorage.getItem('evaluatorProfile');
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        photo = profile.photo || photo;
-      }
-    }
-
-    setProfileData({ initials, photo });
-  }, [userData, userInitials]);
+  const photo = userData?.photo || userData?.photoURL || userData?.profilePhotoUrl || null;
 
   return (
     <header className='py-4 px-6 lg:py-5 lg:px-8'>
-      <div className='max-w-md mx-auto lg:max-w-6xl flex items-center justify-between'>
-        <div className='flex items-center gap-3 lg:gap-4'>
-          {showBackButton && <BackButton variant='light' />}
-
-          <div className='w-12 h-12 lg:w-14 lg:h-14 bg-white/20 rounded-full flex items-center justify-center'>
-            <PiGlobeSimpleThin className='w-7 h-7 lg:w-8 lg:h-8 text-white' />
+      <div className='max-w-7xl mx-auto flex items-center justify-between'>
+        <div className='flex items-center gap-3'>
+          {showBackButton && <BackButton />}
+          <div className='w-10 h-10 lg:w-12 lg:h-12 bg-white/20 rounded-full flex items-center justify-center'>
+            <PiGlobeSimpleThin className='w-6 h-6 lg:w-8 lg:h-8 text-white' />
           </div>
-
-          <button
-            onClick={handleLogout}
-            className='w-12 h-12 lg:w-14 lg:h-14 bg-red-500/20 hover:bg-red-500/30 rounded-full flex items-center justify-center transition-all'
-            title="Logout"
-          >
-            <PiSignOut className='w-6 h-6 lg:w-7 lg:h-7 text-red-200' />
-          </button>
         </div>
 
-        <div className='flex items-center gap-3 lg:gap-5'>
-          <h1 className='text-2xl lg:text-3xl font-bold text-white heading'>
-            NTBOA
-          </h1>
+        <div className='flex items-center gap-3 lg:gap-4'>
+          {/* Navigation Links */}
           <Link
             href='/evaluator/referees'
-            className='flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-all border border-white/10'
-            title='Manage Referees'
+            className='cursor-pointer flex items-center gap-2 px-3 py-2 lg:px-4 lg:py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all font-medium text-xs lg:text-sm'
           >
             <HiUserGroup className='w-4 h-4' />
-            <span className='hidden sm:inline'>Referees</span>
+            <span className='hidden sm:inline'>View Referees</span>
+          </Link>
+
+          <button
+            type='button'
+            onClick={handleLogout}
+            className='cursor-pointer flex items-center gap-2 px-3 py-2 lg:px-4 lg:py-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all font-medium text-xs lg:text-sm'
+            title='Logout'
+          >
+            <PiSignOut className='w-4 h-4' />
+            <span className='hidden sm:inline'>Logout</span>
+          </button>
+
+          <Link
+            href='/evaluator/profile'
+            className='cursor-pointer w-12 h-12 lg:w-14 lg:h-14 bg-white/20 rounded-full flex items-center justify-center transition-all hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white overflow-hidden'
+            aria-label='Open profile'
+          >
+            {photo ? (
+              <Image
+                src={photo}
+                alt='Profile'
+                width={56}
+                height={56}
+                className='w-full h-full object-cover'
+              />
+            ) : (
+              <div className='text-white font-semibold text-sm lg:text-base'>
+                {initials}
+              </div>
+            )}
           </Link>
         </div>
-
-        <Link
-          href='/evaluator/profile'
-          className='w-12 h-12 lg:w-14 lg:h-14 bg-white/20 rounded-full flex items-center justify-center transition-all hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white overflow-hidden'
-          aria-label='Open profile'
-        >
-          {profileData.photo ? (
-            <img
-              src={profileData.photo}
-              alt='Profile'
-              className='w-full h-full object-cover'
-            />
-          ) : (
-            <div className='text-white font-semibold text-sm lg:text-base'>
-              {profileData.initials}
-            </div>
-          )}
-        </Link>
       </div>
     </header>
   );

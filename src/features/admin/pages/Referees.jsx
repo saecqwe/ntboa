@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp, getDocs, orderBy, limit } from 'firebase/firestore';
 import { createUser } from '@/features/authentication/services/authService';
 import { db, functions } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
@@ -11,67 +11,73 @@ import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 
+// ---------------------------------------------------------------------------
+// Module-level cache — survives component unmounts (tab switches).
+// ---------------------------------------------------------------------------
+let globalRefereesCache = {
+  referees: [],
+  loaded: false,
+  timestamp: 0,
+};
+
 const RefereesPage = () => {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-  });
-  const [editFormData, setEditFormData] = useState({
-    id: '',
-    fullName: '',
-    tier: '',
-  });
+  const [formData, setFormData] = useState({ fullName: '', email: '', password: '' });
+  const [editFormData, setEditFormData] = useState({ id: '', fullName: '', tier: '' });
   const [editingReferee, setEditingReferee] = useState(null);
-  const [referees, setReferees] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize from module-level cache for instant tab switch renders
+  const [referees, setReferees] = useState(() => globalRefereesCache.referees);
+  const [loading, setLoading] = useState(() => !globalRefereesCache.loaded);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Ref to hold the onSnapshot unsubscribe so useEffect cleanup can reach it
+  const unsubscribeRef = useRef(null);
+
   useEffect(() => {
+    // Render from cache immediately on tab revisit
+    if (globalRefereesCache.loaded) {
+      setReferees(globalRefereesCache.referees);
+      setLoading(false);
+    }
+
     const fetchRefereesAndEvaluations = async () => {
       try {
-        // 1. Fetch Referees (real-time listener)
         const q = query(collection(db, 'users'), where('role', '==', 'referee'));
 
-        const unsubscribe = onSnapshot(q, async (querySnapshot) => {
+        // Pre-fetch evaluations and assignments in parallel before snapshot
+        const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'), limit(200));
+        const [evalsSnapshot, assignmentsSnapshot] = await Promise.all([
+          getDocs(evalsQuery),
+          getDocs(collection(db, 'assignments'))
+        ]);
+        const allEvaluations = evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const allAssignments = assignmentsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Hoist unsubscribe into the ref so useEffect cleanup can call it
+        unsubscribeRef.current = onSnapshot(q, (querySnapshot) => {
           const refereesList = [];
-          querySnapshot.forEach((doc) => {
-            refereesList.push({ id: doc.id, ...doc.data() });
+          querySnapshot.forEach((docSnap) => {
+            refereesList.push({ id: docSnap.id, ...docSnap.data() });
           });
 
-          // 2. Fetch All Evaluations (to aggregate stats)
-          const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
-          const evalsSnapshot = await getDocs(evalsQuery);
-          const allEvaluations = evalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          // 3. Fetch All Assignments (to find next game)
-          // We fetch all to avoid N+1 queries. In a huge app, we'd paginate or use cloud functions.
-          const assignmentsSnapshot = await getDocs(collection(db, 'assignments'));
-          const allAssignments = assignmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           const now = new Date();
 
-          // 4. Merge Stats & Next Game
           const refereesWithStats = refereesList.map(referee => {
             const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
-
             const evalCount = refereeEvals.length;
             const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
             const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
-
-            // Get suggested tier: Prioritize the User Profile field (updated on submission), fallback to latest eval
             const latestEval = refereeEvals[0];
             const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
 
-            // Find Next Assignment
             const myAssignments = allAssignments.filter(a =>
               a.refereeIds && a.refereeIds.includes(referee.id)
             );
-
             const futureAssignments = myAssignments
               .map(a => ({
                 ...a,
@@ -83,32 +89,45 @@ const RefereesPage = () => {
             const nextGame = futureAssignments[0];
             const nextAssignmentData = nextGame ? {
               location: nextGame.location,
-              game: 'Scheduled Match', // Or use specific game/team names if available in assignment
+              game: 'Scheduled Match',
               dateTime: nextGame.dateObj.toISOString()
             } : null;
 
             return {
               ...referee,
               evaluations: evalCount,
-              avgScore: avgScore,
-              suggestedTier: suggestedTier,
-              nextAssignment: nextAssignmentData
+              avgScore,
+              suggestedTier,
+              nextAssignment: nextAssignmentData,
             };
           });
+
+          // Update module-level cache so next tab switch is instant
+          globalRefereesCache = {
+            referees: refereesWithStats,
+            loaded: true,
+            timestamp: Date.now(),
+          };
 
           setReferees(refereesWithStats);
           setLoading(false);
         });
-
-        return () => unsubscribe();
       } catch (error) {
-        console.error("Error fetching data:", error);
-        toast.error("Failed to load data.");
+        console.error('Error fetching data:', error);
+        toast.error('Failed to load data.');
         setLoading(false);
       }
     };
 
     fetchRefereesAndEvaluations();
+
+    // Cleanup: unsubscribe from Firestore listener when component unmounts
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
   }, []);
 
   // Filter referees based on search

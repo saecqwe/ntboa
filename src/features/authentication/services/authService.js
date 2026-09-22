@@ -87,7 +87,25 @@ export const getUserDocument = async (uid) => {
  */
 export const updateUserProfile = async (uid, data) => {
   const docRef = doc(db, 'users', uid);
-  return updateDoc(docRef, data);
+  const payload = { ...data };
+
+  // Keep photo and photoURL synchronized across all user types and components
+  if ('photo' in payload && !('photoURL' in payload)) {
+    payload.photoURL = payload.photo || '';
+  } else if ('photoURL' in payload && !('photo' in payload)) {
+    payload.photo = payload.photoURL || '';
+  }
+
+  // Guard against Firestore 1,048,487 bytes limit (throw friendly error if exceeded)
+  const maxByteLength = 950000;
+  if (typeof payload.photo === 'string' && payload.photo.length > maxByteLength) {
+    throw new Error('Profile photo is too large to save. Please select an image under 10MB to allow automatic compression.');
+  }
+  if (typeof payload.photoURL === 'string' && payload.photoURL.length > maxByteLength) {
+    throw new Error('Profile photo is too large to save. Please select an image under 10MB to allow automatic compression.');
+  }
+
+  return updateDoc(docRef, payload);
 };
 
 /**

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { getAuth, signOut } from 'firebase/auth';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
@@ -149,9 +150,11 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
           >
             <div className='w-10 h-10 rounded-full flex items-center justify-center overflow-hidden'>
               {profile.profilePhotoUrl ? (
-                <img
+                <Image
                   src={profile.profilePhotoUrl}
                   alt='Profile'
+                  width={40}
+                  height={40}
                   className='w-full h-full object-cover'
                 />
               ) : (

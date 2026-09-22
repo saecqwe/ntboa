@@ -1,8 +1,95 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && (
+        request.auth.token.role == role ||
+        getUserData().role == role
+      );
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isEvaluator() {
+      return hasRole('evaluator');
+    }
+
+    function isReferee() {
+      return hasRole('referee');
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      // Any authenticated user can read profiles (needed for name lookups, directories)
+      allow read: if isAuthenticated();
+
+      // Users can update their own profile details, but cannot alter their role or status directly
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (isOwner(userId) && 
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+      );
+
+      // Only admins can create or delete user records
+      allow create, delete: if isAdmin();
+    }
+
+    // EVALUATIONS COLLECTION
+    match /evaluations/{evaluationId} {
+      // Admins can read all evaluations
+      // Evaluators can read evaluations they conducted
+      // Referees can read evaluations in which they were evaluated
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.evaluatorId == request.auth.uid ||
+        resource.data.refereeId == request.auth.uid ||
+        (resource.data.refereeIds is list && request.auth.uid in resource.data.refereeIds)
+      );
+
+      // Only Admins or the assigning Evaluator can create/update evaluations
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        (isEvaluator() && request.resource.data.evaluatorId == request.auth.uid)
+      );
+
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (isEvaluator() && resource.data.evaluatorId == request.auth.uid)
+      );
+
+      // Only Admins can delete evaluations
+      allow delete: if isAdmin();
+    }
+
+    // ASSIGNMENTS COLLECTION
+    match /assignments/{assignmentId} {
+      // Authenticated users can view assignments
+      allow read: if isAuthenticated();
+
+      // Only admins and evaluators can manage assignments
+      allow write: if isAdmin() || isEvaluator();
+    }
+
+    // LOCATIONS COLLECTION
+    match /locations/{locationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }

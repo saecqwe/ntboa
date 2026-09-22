@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 import { getEvaluationById } from '@/features/evaluator/services/evaluationService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
+import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 
 const EvaluationDetailsPage = () => {
   const router = useRouter();
@@ -52,7 +53,7 @@ const EvaluationDetailsPage = () => {
   }, [params.id]);
 
   if (loading) {
-    return <div className="min-h-screen bg-[#181818] flex items-center justify-center text-white">Loading...</div>;
+    return <EvaluationDetailSkeleton />;
   }
 
   if (error || !evaluation) {

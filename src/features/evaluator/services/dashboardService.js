@@ -107,8 +107,8 @@ export const getDashboardData = async (userId) => {
     allAssignments.forEach(asgn => {
         const scheduledDate = asgn.scheduledDate?.toDate ? asgn.scheduledDate.toDate() : new Date(asgn.scheduledDate);
         
-        // Today
-        if (scheduledDate >= todayStart && scheduledDate <= todayEnd) {
+        // Today (Pending)
+        if (scheduledDate >= todayStart && scheduledDate <= todayEnd && asgn.status !== 'completed') {
             assignmentsToday++;
         }
 
@@ -202,7 +202,10 @@ export const getDashboardData = async (userId) => {
       relevantAssignments,
       quickOverview: {
         thisMonth, // Evaluations this month (kept for legacy/context)
-        completionRate: (assignmentsDoneThisWeek + assignmentsMissed + assignmentsToday) > 0 
+        assignmentsThisWeek: assignmentsToday + assignmentsUpcoming + assignmentsDoneThisWeek,
+        assignmentsDone: assignmentsDoneThisWeek,
+        assignmentsMissed,
+        completionRate: (assignmentsDoneThisWeek + assignmentsMissed + assignmentsToday + assignmentsUpcoming) > 0 
             ? `${Math.round((assignmentsDoneThisWeek / (assignmentsDoneThisWeek + assignmentsMissed + assignmentsToday + assignmentsUpcoming)) * 100)}%` 
             : '0%',
       },

@@ -1,13 +1,23 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { collection, query, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+
+// ---------------------------------------------------------------------------
+// Module-level cache — survives component unmounts (tab switches).
+// ---------------------------------------------------------------------------
+let globalEvaluationsCache = {
+  evaluations: [],
+  stats: { totalEvaluations: 0, thisWeek: 0, avgScore: 0 },
+  loaded: false,
+  timestamp: 0,
+};
 
 const scoreCategories = [
   { label: 'Court Presence', key: 'courtPresence', max: 5 },
@@ -54,13 +64,12 @@ const EvaluationsPage = () => {
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEvaluation, setSelectedEvaluation] = useState(null);
-  const [evaluations, setEvaluations] = useState([]);
-  const [stats, setStats] = useState({
-    totalEvaluations: 0,
-    thisWeek: 0,
-    avgScore: 0,
-  });
-  const [loading, setLoading] = useState(true);
+
+  // Initialize from module-level cache for instant tab switch renders
+  const [evaluations, setEvaluations] = useState(() => globalEvaluationsCache.evaluations);
+  const [stats, setStats] = useState(() => globalEvaluationsCache.stats);
+  const [loading, setLoading] = useState(() => !globalEvaluationsCache.loaded);
+
   const tierDropdownRef = useRef(null);
   const timeDropdownRef = useRef(null);
 
@@ -98,8 +107,14 @@ const EvaluationsPage = () => {
   }).reverse();
 
   useEffect(() => {
+    // Render from cache immediately on tab revisit
+    if (globalEvaluationsCache.loaded) {
+      setEvaluations(globalEvaluationsCache.evaluations);
+      setStats(globalEvaluationsCache.stats);
+      setLoading(false);
+    }
+
     const fetchData = async () => {
-      setLoading(true);
       try {
         // 1. Fetch all users once into a lookup map to avoid N+1 queries and missing docs
         const usersSnapshot = await getDocs(collection(db, 'users'));
@@ -108,8 +123,12 @@ const EvaluationsPage = () => {
           userMap[uDoc.id] = uDoc.data();
         });
 
-        // 2. Fetch evaluations
-        const evaluationsQuery = query(collection(db, 'evaluations'));
+        // 2. Fetch evaluations sorted by creation date with limit
+        const evaluationsQuery = query(
+          collection(db, 'evaluations'),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        );
         const evaluationsSnapshot = await getDocs(evaluationsQuery);
         const evaluationsData = evaluationsSnapshot.docs.map((evalDoc) => {
           const evaluation = evalDoc.data();
@@ -128,15 +147,13 @@ const EvaluationsPage = () => {
             evaluatorName: evalName,
             tier: tier,
             tierColor: getTierColor(tier),
-            createdAtDate: evaluation.createdAt?.seconds 
-              ? new Date(evaluation.createdAt.seconds * 1000) 
+            createdAtDate: evaluation.createdAt?.seconds
+              ? new Date(evaluation.createdAt.seconds * 1000)
               : (evaluation.gameDate ? new Date(evaluation.gameDate) : new Date()),
           };
         });
 
-        setEvaluations(evaluationsData);
-
-        // 3. Calculate stats safely
+        // 3. Calculate stats
         const totalEvaluations = evaluationsData.length;
         const now = new Date();
         const oneWeekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
@@ -144,13 +161,24 @@ const EvaluationsPage = () => {
         const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
         const avgScore = totalEvaluations > 0 ? (totalScore / totalEvaluations).toFixed(1) : '0.0';
 
-        setStats({
+        const newStats = {
           totalEvaluations,
           thisWeek: thisWeekEvaluations.length,
           avgScore,
-        });
+        };
+
+        setEvaluations(evaluationsData);
+        setStats(newStats);
+
+        // Populate module-level cache
+        globalEvaluationsCache = {
+          evaluations: evaluationsData,
+          stats: newStats,
+          loaded: true,
+          timestamp: Date.now(),
+        };
       } catch (error) {
-        console.error("Error fetching evaluations:", error);
+        console.error('Error fetching evaluations:', error);
       } finally {
         setLoading(false);
       }

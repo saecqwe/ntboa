@@ -10,6 +10,18 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronDown, HiCheck } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
+import TableRowSkeleton from '@/ui/skeletons/TableRowSkeleton';
+
+// ---------------------------------------------------------------------------
+// Module-level cache — survives component unmounts (tab switches).
+// On the first visit: loaded=false → shows skeleton → populates cache.
+// On subsequent visits: loaded=true → renders immediately from memory.
+// ---------------------------------------------------------------------------
+let globalEvaluatorsCache = {
+  evaluators: [],
+  loaded: false,
+  timestamp: 0,
+};
 
 const EvaluatorsPage = () => {
   const router = useRouter();
@@ -17,10 +29,11 @@ const EvaluatorsPage = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   
-  // Data State
-  const [evaluators, setEvaluators] = useState([]);
+  // Data State — initialize immediately from module-level cache if available
+  const [evaluators, setEvaluators] = useState(() => globalEvaluatorsCache.evaluators);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // Only show skeleton on the very first load (cache is empty)
+  const [loading, setLoading] = useState(() => !globalEvaluatorsCache.loaded);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Form State
@@ -37,27 +50,40 @@ const EvaluatorsPage = () => {
   const [editingEvaluator, setEditingEvaluator] = useState(null);
 
   useEffect(() => {
-    // Fetch evaluators from 'users' collection where role is 'evaluator'
+    // If cache is already populated, render it immediately and still set up
+    // the real-time listener in the background to catch any remote changes.
+    if (globalEvaluatorsCache.loaded) {
+      setEvaluators(globalEvaluatorsCache.evaluators);
+      setLoading(false);
+    }
+
     const q = query(collection(db, 'users'), where('role', '==', 'evaluator'));
-    
+
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const evaluatorsData = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         evaluatorsData.push({
-          id: doc.id,
+          id: docSnap.id,
           ...data,
-          // Format date if it exists
-          joinedDate: data.createdAt?.seconds 
+          joinedDate: data.createdAt?.seconds
             ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-            : 'N/A'
+            : 'N/A',
         });
       });
+
+      // Update module-level cache so next tab switch is instant
+      globalEvaluatorsCache = {
+        evaluators: evaluatorsData,
+        loaded: true,
+        timestamp: Date.now(),
+      };
+
       setEvaluators(evaluatorsData);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching evaluators:", error);
-      toast.error("Failed to load evaluators.");
+      console.error('Error fetching evaluators:', error);
+      toast.error('Failed to load evaluators.');
       setLoading(false);
     });
 
@@ -277,13 +303,7 @@ const EvaluatorsPage = () => {
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr>
-                        <td colSpan='5' className='text-center py-12'>
-                          <p className='text-[15px] text-[#6b7280] text-body'>
-                            Loading evaluators...
-                          </p>
-                        </td>
-                      </tr>
+                      <TableRowSkeleton rows={6} cols={['w-36', 'w-44', 'w-20', 'w-24', 'w-20']} />
                     ) : filteredEvaluators.length > 0 ? (
                       filteredEvaluators.map((evaluator) => (
                         <tr

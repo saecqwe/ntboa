@@ -12,7 +12,7 @@ import { useAuth } from '@/features/authentication/hooks/useAuth';
 const EvaluatorHome = () => {
   const { user, userData: authUserData, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [activeFilter, setActiveFilter] = useState('upcoming'); // Default to upcoming/today view
+  const [activeFilter, setActiveFilter] = useState('pending'); // Default to all actionable pending assignments
   
   // Profile data derived directly from authUserData
   const userData = React.useMemo(() => {
@@ -48,7 +48,13 @@ const EvaluatorHome = () => {
     },
     recentEvaluations: [],
     relevantAssignments: [],
-    quickOverview: { thisMonth: 0, completionRate: '0%' },
+    quickOverview: {
+      thisMonth: 0,
+      assignmentsThisWeek: 0,
+      assignmentsDone: 0,
+      assignmentsMissed: 0,
+      completionRate: '0%',
+    },
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,7 +62,6 @@ const EvaluatorHome = () => {
   useEffect(() => {
     if (!user) return;
 
-    setIsLoading(true);
     const unsubscribe = subscribeToDashboardData(
       user.uid,
       (data) => {
@@ -115,31 +120,36 @@ const EvaluatorHome = () => {
     },
   ];
 
-  const getFilteredAssignments = () => {
-    if (!dashboardData.relevantAssignments) return [];
-    
+  const dateBoundaries = React.useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(now);
     todayEnd.setHours(23, 59, 59, 999);
+    return { now, todayStart, todayEnd };
+  }, []);
 
-    return dashboardData.relevantAssignments.filter(asgn => {
+  const getFilteredAssignments = () => {
+    if (!dashboardData.relevantAssignments) return [];
+    
+    const { todayStart, todayEnd } = dateBoundaries;
+
+    return dashboardData.relevantAssignments.filter((asgn) => {
        const date = new Date(asgn.rawDate);
        
        switch(activeFilter) {
            case 'today':
                return date >= todayStart && date <= todayEnd && asgn.status !== 'completed';
            case 'upcoming':
-               // "Upcoming" usually implies future, but practically users want to see everything coming up including today.
-               // But strictly separating them:
                return date > todayEnd && asgn.status !== 'completed';
            case 'done':
                return asgn.status === 'completed';
            case 'missed':
-               return asgn.isMissed;
+               return asgn.isMissed && asgn.status !== 'completed';
+           case 'pending':
            default:
-               return true;
+               // Shows all actionable assignments (overdue, due today, upcoming)
+               return asgn.status !== 'completed';
        }
     });
   };
@@ -208,8 +218,9 @@ const EvaluatorHome = () => {
                       return (
                         <button
                           key={card.id}
-                          onClick={() => setActiveFilter(isActive ? 'all' : card.filterKey)}
-                          className={`relative overflow-hidden rounded-[24px] p-5 flex flex-col items-start justify-between min-h-[140px] transition-all duration-300 border ${isActive ? `ring-2 ring-white/50 scale-[1.02] ${card.border}` : 'border-[#FFFFFF]/10 hover:border-[#FFFFFF]/30 hover:-translate-y-1'}`}
+                          type='button'
+                          onClick={() => setActiveFilter(isActive ? 'pending' : card.filterKey)}
+                          className={`cursor-pointer relative overflow-hidden rounded-[24px] p-5 flex flex-col items-start justify-between min-h-[140px] transition-all duration-300 border text-left ${isActive ? `ring-2 ring-white/50 scale-[1.02] ${card.border}` : 'border-[#FFFFFF]/10 hover:border-[#FFFFFF]/30 hover:-translate-y-1'}`}
                         >
                           {/* Background Gradient */}
                           <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} ${isActive ? 'opacity-100' : 'opacity-10'} transition-opacity duration-300`} />
@@ -223,7 +234,7 @@ const EvaluatorHome = () => {
                           </div>
                           
                           <div className="relative z-10 mt-auto">
-                            <div className={`text-[32px] font-bold leading-none mb-1 ${isActive ? 'text-white' : 'text-white'}`}>
+                            <div className="text-[32px] font-bold leading-none mb-1 text-white">
                                 {card.value}
                             </div>
                             <div className={`text-[13px] font-medium tracking-wide ${isActive ? 'text-white/90' : 'text-[#9ca3af]'}`}>
@@ -238,7 +249,7 @@ const EvaluatorHome = () => {
                   {/* CTA Button - Mobile Only (appears here in mobile) */}
                   <Link
                     href='/evaluator/new-evaluation'
-                    className='lg:hidden block bg-accent rounded-[20px] px-8 py-5 text-center mb-8 hover:opacity-90 active:scale-[0.98] transition-all shadow-lg'
+                    className='cursor-pointer lg:hidden block bg-accent rounded-[20px] px-8 py-5 text-center mb-8 hover:opacity-90 active:scale-[0.98] transition-all shadow-lg'
                   >
                     <div className='text-[22px] font-bold text-white heading mb-1 leading-tight'>
                       Start New Evaluation
@@ -250,54 +261,110 @@ const EvaluatorHome = () => {
 
                   {/* Pending Assignments Section */}
                   <div className='mb-8'>
-                    <div className='flex items-center justify-between mb-4 lg:mb-5'>
-                      <h3 className='text-[20px] lg:text-[24px] font-bold text-white heading'>
-                        Your Assignments
-                      </h3>
+                    <div className='flex items-center justify-between mb-4 lg:mb-5 flex-wrap gap-2'>
+                      <div className='flex items-center gap-3'>
+                        <h3 className='text-[20px] lg:text-[24px] font-bold text-white heading'>
+                          {activeFilter === 'today' ? "Today's Assignments" :
+                           activeFilter === 'upcoming' ? 'Upcoming Assignments' :
+                           activeFilter === 'done' ? 'Completed Assignments' :
+                           activeFilter === 'missed' ? 'Overdue Assignments' :
+                           'Your Assignments'}
+                        </h3>
+                        {activeFilter !== 'pending' && (
+                          <button
+                            type='button'
+                            onClick={() => setActiveFilter('pending')}
+                            className='cursor-pointer text-[12px] text-accent hover:underline bg-accent/10 hover:bg-accent/20 px-2.5 py-1 rounded-lg border border-accent/20 transition-all font-medium'
+                          >
+                            Show All Pending
+                          </button>
+                        )}
+                      </div>
+                      <div className='text-[13px] text-[#9ca3af] font-medium'>
+                        {filteredAssignments.length} {filteredAssignments.length === 1 ? 'assignment' : 'assignments'}
+                      </div>
                     </div>
 
                     <div className='space-y-3 lg:space-y-3'>
                       {filteredAssignments && filteredAssignments.length > 0 ? (
-                        filteredAssignments.map((assignment) => (
-                          <div
-                            key={assignment.id}
-                            className={`bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex flex-col border transition-all ${assignment.isMissed ? 'border-red-500/30' : 'border-[#FFFFFF]/20'}`}
-                          >
-                             <div className='flex justify-between items-start mb-2'>
-                                <div className='flex items-center gap-2'>
-                                    <div className='text-[16px] font-semibold text-white heading'>
-                                    {assignment.location}
-                                    </div>
-                                    {assignment.isMissed && (
-                                        <span className='bg-red-500/20 text-red-500 text-[10px] px-2 py-0.5 rounded font-bold uppercase'>
-                                            Missed
-                                        </span>
-                                    )}
+                        filteredAssignments.map((assignment) => {
+                          const asgnDate = new Date(assignment.rawDate);
+                          const isToday = asgnDate >= dateBoundaries.todayStart && asgnDate <= dateBoundaries.todayEnd;
+
+                          return (
+                            <div
+                              key={assignment.id}
+                              className={`bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex flex-col border transition-all ${
+                                assignment.status === 'completed'
+                                  ? 'border-emerald-500/30'
+                                  : assignment.isMissed
+                                  ? 'border-rose-500/30 bg-rose-500/[0.03]'
+                                  : isToday
+                                  ? 'border-blue-500/30 bg-blue-500/[0.03]'
+                                  : 'border-[#FFFFFF]/20'
+                              }`}
+                            >
+                              <div className='flex justify-between items-start mb-2'>
+                                <div className='flex items-center gap-2 flex-wrap'>
+                                  <div className='text-[16px] font-semibold text-white heading'>
+                                    {assignment.location || 'Unknown Location'}
+                                  </div>
+                                  {assignment.status === 'completed' ? (
+                                    <span className='bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide'>
+                                      Completed
+                                    </span>
+                                  ) : assignment.isMissed ? (
+                                    <span className='bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide'>
+                                      Overdue
+                                    </span>
+                                  ) : isToday ? (
+                                    <span className='bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide'>
+                                      Due Today
+                                    </span>
+                                  ) : (
+                                    <span className='bg-violet-500/20 text-violet-400 border border-violet-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide'>
+                                      Upcoming
+                                    </span>
+                                  )}
                                 </div>
                                 <div className='text-[13px] text-accent bg-accent/10 px-2 py-1 rounded-lg border border-accent/20'>
-                                   {assignment.time}
+                                  {assignment.time}
                                 </div>
-                             </div>
-                             <div className='flex justify-between items-center mb-3'>
+                              </div>
+                              <div className='flex justify-between items-center mb-3'>
                                 <div className='text-[14px] text-[#9ca3af] text-body'>
-                                   {assignment.date}
+                                  {assignment.date}
                                 </div>
                                 <div className='text-[13px] text-white/80 text-body truncate max-w-[50%] text-right'>
-                                   {assignment.refereeDetails.map(r => r.name).join(', ')}
+                                  {assignment.refereeDetails && assignment.refereeDetails.length > 0
+                                    ? assignment.refereeDetails.map(r => r.name).join(', ')
+                                    : 'No referees assigned'}
                                 </div>
-                             </div>
-                             
-                             <button 
-                                onClick={() => handleStartEvaluation(assignment)}
-                                className='w-full bg-accent/20 hover:bg-accent hover:text-white text-accent border border-accent/50 rounded-xl py-2 flex items-center justify-center gap-2 transition-all font-semibold text-sm'
-                             >
-                                <IoPlay /> Start Evaluation
-                             </button>
-                          </div>
-                        ))
+                              </div>
+                              
+                              {assignment.status !== 'completed' ? (
+                                <button 
+                                  type='button'
+                                  onClick={() => handleStartEvaluation(assignment)}
+                                  className='w-full cursor-pointer bg-accent/20 hover:bg-accent hover:text-white text-accent border border-accent/50 rounded-xl py-2 flex items-center justify-center gap-2 transition-all font-semibold text-sm'
+                                >
+                                  <IoPlay /> Start Evaluation
+                                </button>
+                              ) : (
+                                <div className='text-xs text-emerald-400 font-medium text-center py-1 flex items-center justify-center gap-1'>
+                                  <IoCheckmarkCircle className='w-4 h-4' /> Evaluation Completed
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className='text-center py-8 text-gray-500 bg-[#FFFFFF]/6 rounded-[20px] border border-[#FFFFFF]/20'>
-                          No pending assignments
+                          {activeFilter === 'today' ? 'No assignments due today' :
+                           activeFilter === 'upcoming' ? 'No upcoming assignments' :
+                           activeFilter === 'done' ? 'No completed assignments this week' :
+                           activeFilter === 'missed' ? 'No overdue assignments' :
+                           'No pending assignments'}
                         </div>
                       )}
                     </div>
@@ -311,7 +378,7 @@ const EvaluatorHome = () => {
                       </h3>
                       <Link 
                         href='/evaluator/evaluations'
-                        className='text-[14px] font-medium text-accent hover:text-accent/80 transition-colors'
+                        className='cursor-pointer text-[14px] font-medium text-accent hover:text-accent/80 transition-colors'
                       >
                         View All
                       </Link>
@@ -324,7 +391,7 @@ const EvaluatorHome = () => {
                           <Link
                             href={`/evaluator/evaluation/${evaluation.id}`}
                             key={evaluation.id}
-                            className='bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all cursor-pointer'
+                            className='cursor-pointer bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all'
                           >
                             {/* Left Side - Name and Date */}
                             <div className='flex-1 pr-4'>
@@ -365,7 +432,7 @@ const EvaluatorHome = () => {
                     {/* CTA Button - Desktop */}
                     <Link
                       href='/evaluator/new-evaluation'
-                      className='block bg-accent rounded-[20px] px-8 py-6 text-center hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg'
+                      className='cursor-pointer block bg-accent rounded-[20px] px-8 py-6 text-center hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg'
                     >
                       <div className='text-[22px] font-bold text-white heading mb-1.5 leading-tight'>
                         Start New Evaluation

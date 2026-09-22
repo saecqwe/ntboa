@@ -7,19 +7,49 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiX, HiPlus, HiChevronUp, HiChevronDown, HiSearch } from 'react-icons/hi';
 import { FiUsers, FiUser, FiCalendar, FiClock, FiMapPin } from 'react-icons/fi';
+import EvaluationListSkeleton from '@/ui/skeletons/EvaluationListSkeleton';
+
+// In-memory module cache across client tab navigations
+let globalAssignmentsCache = {
+  evaluators: [],
+  referees: [],
+  assignments: [],
+  locationsList: [],
+  loaded: false,
+  timestamp: 0,
+};
+
+// Helpers for default date and time
+const getCurrentLocalDate = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getNextHourTime = () => {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+  const h = String(nextHour.getHours()).padStart(2, '0');
+  const m = String(nextHour.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+};
 
 const AssignmentsPage = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // Assignment Creation State
+  // Assignment Creation State - default date to today and time to next hour
   const [isCreating, setIsCreating] = useState(false);
   const [selectedEvaluator, setSelectedEvaluator] = useState(null);
   const [selectedReferees, setSelectedReferees] = useState([]);
   const [evaluatorSearch, setEvaluatorSearch] = useState('');
   const [refereeSearch, setRefereeSearch] = useState('');
+  const [refereeTabFilter, setRefereeTabFilter] = useState('all'); // 'all' | 'selected'
   const [location, setLocation] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [date, setDate] = useState(() => getCurrentLocalDate());
+  const [time, setTime] = useState(() => getNextHourTime());
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
   const timeDropdownRef = useRef(null);
 
@@ -48,12 +78,12 @@ const AssignmentsPage = () => {
     return options;
   }, []);
 
-  // Data State
-  const [evaluators, setEvaluators] = useState([]);
-  const [referees, setReferees] = useState([]);
-  const [assignments, setAssignments] = useState([]);
-  const [locationsList, setLocationsList] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Data State - initialized immediately from cache if available
+  const [evaluators, setEvaluators] = useState(() => globalAssignmentsCache.evaluators);
+  const [referees, setReferees] = useState(() => globalAssignmentsCache.referees);
+  const [assignments, setAssignments] = useState(() => globalAssignmentsCache.assignments);
+  const [locationsList, setLocationsList] = useState(() => globalAssignmentsCache.locationsList);
+  const [loading, setLoading] = useState(() => !globalAssignmentsCache.loaded);
 
   // Filter State
   const [filterDate, setFilterDate] = useState('');
@@ -61,31 +91,73 @@ const AssignmentsPage = () => {
   const [filterEvaluator, setFilterEvaluator] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
 
+  // In-memory module cache to instantly render when switching tabs
+  const dataCacheRef = useRef(globalAssignmentsCache);
+
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
-      setLoading(true);
+      // If we already have cached data, populate immediately and don't block the screen with full loader
+      if (globalAssignmentsCache.loaded) {
+        setEvaluators(globalAssignmentsCache.evaluators);
+        setReferees(globalAssignmentsCache.referees);
+        setAssignments(globalAssignmentsCache.assignments);
+        setLocationsList(globalAssignmentsCache.locationsList);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       try {
-        const evaluatorsQuery = query(collection(db, 'users'), where('role', '==', 'evaluator'));
-        const evaluatorsSnapshot = await getDocs(evaluatorsQuery);
-        setEvaluators(evaluatorsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+        // Parallelize all 4 Firestore collection queries with Promise.all
+        const [
+          evaluatorsSnapshot,
+          refereesSnapshot,
+          assignmentsSnapshot,
+          locationsSnapshot
+        ] = await Promise.all([
+          getDocs(query(collection(db, 'users'), where('role', '==', 'evaluator'))),
+          getDocs(query(collection(db, 'users'), where('role', '==', 'referee'))),
+          getDocs(query(collection(db, 'assignments'))),
+          getDocs(query(collection(db, 'locations')))
+        ]);
 
-        const refereesQuery = query(collection(db, 'users'), where('role', '==', 'referee'));
-        const refereesSnapshot = await getDocs(refereesQuery);
-        setReferees(refereesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+        if (!isMounted) return;
 
-        const assignmentsQuery = query(collection(db, 'assignments'));
-        const assignmentsSnapshot = await getDocs(assignmentsQuery);
-        setAssignments(assignmentsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
-        
-        const locationsQuery = query(collection(db, 'locations'));
-        const locationsSnapshot = await getDocs(locationsQuery);
-        setLocationsList(locationsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })).sort((a, b) => a.name.localeCompare(b.name)));
+        const newEvaluators = evaluatorsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const newReferees = refereesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const newAssignments = assignmentsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const newLocations = locationsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        // Update in-memory global cache
+        globalAssignmentsCache = {
+          evaluators: newEvaluators,
+          referees: newReferees,
+          assignments: newAssignments,
+          locationsList: newLocations,
+          loaded: true,
+          timestamp: Date.now(),
+        };
+
+        setEvaluators(newEvaluators);
+        setReferees(newReferees);
+        setAssignments(newAssignments);
+        setLocationsList(newLocations);
       } catch (error) {
         console.error("Fetch error:", error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
     };
+
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const displayedAssignments = useMemo(() => {
@@ -138,19 +210,64 @@ const AssignmentsPage = () => {
     return ids;
   }, [selectedEvaluator, assignments, date]);
 
-  
+  const isUserDisabled = (user) => {
+    if (!user) return true;
+    if (user.status) {
+      const s = String(user.status).toLowerCase().trim();
+      if (['disabled', 'suspended', 'deleted', 'inactive'].includes(s)) {
+        return true;
+      }
+    }
+    if (user.isSuspended === true || user.suspended === true) return true;
+    if (user.isDeleted === true || user.deleted === true) return true;
+    if (user.isDisabled === true || user.disabled === true) return true;
+    if (user.isActive === false || user.active === false) return true;
+    return false;
+  };
 
-  const filteredEvaluators = evaluators.filter((ev) =>
-    ev.displayName?.toLowerCase().includes(evaluatorSearch.toLowerCase())
-  );
+  const activeEvaluators = useMemo(() => {
+    return evaluators.filter((ev) => !isUserDisabled(ev));
+  }, [evaluators]);
 
-  const filteredReferees = referees.filter((ref) =>
-    ref.displayName?.toLowerCase().includes(refereeSearch.toLowerCase())
-  );
+  const activeReferees = useMemo(() => {
+    return referees.filter((ref) => !isUserDisabled(ref));
+  }, [referees]);
 
-  const handleEvaluatorSelect = (ev) => setSelectedEvaluator(ev);
+  const filteredEvaluators = useMemo(() => {
+    return activeEvaluators.filter((ev) =>
+      ev.displayName?.toLowerCase().includes(evaluatorSearch.toLowerCase())
+    );
+  }, [activeEvaluators, evaluatorSearch]);
+
+  const filteredReferees = useMemo(() => {
+    let base = activeReferees.filter((ref) =>
+      ref.displayName?.toLowerCase().includes(refereeSearch.toLowerCase())
+    );
+    if (refereeTabFilter === 'selected') {
+      base = base.filter((ref) => selectedReferees.includes(ref.id));
+    }
+    return base;
+  }, [activeReferees, refereeSearch, refereeTabFilter, selectedReferees]);
+
+  // Ensure selected evaluator and referees do not retain any suspended or deleted accounts
+  useEffect(() => {
+    setSelectedEvaluator((prev) => (prev && isUserDisabled(prev) ? null : prev));
+    setSelectedReferees((prev) =>
+      prev.filter((rid) => {
+        const ref = referees.find((r) => r.id === rid);
+        return !isUserDisabled(ref);
+      })
+    );
+  }, [evaluators, referees]);
+
+  const handleEvaluatorSelect = (ev) => {
+    if (isUserDisabled(ev)) return;
+    setSelectedEvaluator(ev);
+  };
 
   const handleRefereeToggle = (refereeId) => {
+    const ref = referees.find((r) => r.id === refereeId);
+    if (isUserDisabled(ref)) return;
     setSelectedReferees((prev) =>
       prev.includes(refereeId) ? prev.filter((id) => id !== refereeId) : [...prev, refereeId]
     );
@@ -169,6 +286,20 @@ const AssignmentsPage = () => {
       return;
     }
 
+    if (selectedEvaluator && isUserDisabled(selectedEvaluator)) {
+      alert('The selected evaluator account is suspended or deleted.');
+      return;
+    }
+
+    const hasDisabledRef = selectedReferees.some((rid) => {
+      const ref = referees.find((r) => r.id === rid);
+      return isUserDisabled(ref);
+    });
+    if (hasDisabledRef) {
+      alert('One or more selected referees are suspended or deleted.');
+      return;
+    }
+
     try {
       const scheduledDate = new Date(`${date}T${time}`);
       const newAssignment = {
@@ -180,7 +311,12 @@ const AssignmentsPage = () => {
         createdAt: new Date().toISOString()
       };
       const docRef = await addDoc(collection(db, 'assignments'), newAssignment);
-      setAssignments(prev => [...prev, { id: docRef.id, ...newAssignment }]);
+      const createdItem = { id: docRef.id, ...newAssignment };
+      setAssignments(prev => {
+        const next = [...prev, createdItem];
+        globalAssignmentsCache.assignments = next;
+        return next;
+      });
       setSelectedReferees([]);
       // Retaining last assigned location and time for multi-assignment convenience
       alert('Assignment created successfully!');
@@ -194,7 +330,11 @@ const AssignmentsPage = () => {
     if (!window.confirm('Are you sure you want to delete this assignment?')) return;
     try {
       await deleteDoc(doc(db, 'assignments', assignmentId));
-      setAssignments(prev => prev.filter(a => a.id !== assignmentId));
+      setAssignments(prev => {
+        const next = prev.filter(a => a.id !== assignmentId);
+        globalAssignmentsCache.assignments = next;
+        return next;
+      });
     } catch (error) {
       console.error("Error removing assignment:", error);
     }
@@ -227,7 +367,13 @@ const AssignmentsPage = () => {
           </button>
           <h1 className='text-fluid-2xl md:text-fluid-3xl font-semibold text-white heading min-w-0 truncate flex-1'>Assignments</h1>
           <button 
-            onClick={() => setIsCreating(!isCreating)}
+            onClick={() => {
+              if (!isCreating) {
+                if (!date) setDate(getCurrentLocalDate());
+                if (!time) setTime(getNextHourTime());
+              }
+              setIsCreating(!isCreating);
+            }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${isCreating ? 'bg-white/10 text-white' : 'bg-accent text-white hover:opacity-90'}`}
           >
             {isCreating ? <HiChevronUp className="w-5 h-5" /> : <HiPlus className="w-5 h-5" />}
@@ -308,39 +454,171 @@ const AssignmentsPage = () => {
                 </div>
 
                 <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
-                  <div className='rounded-xl border border-[#3a3a3a] flex flex-col h-[300px]'>
-                    <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
-                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUsers className='text-accent' /> Select Evaluator <span className='text-red-500'>*</span></h3>
-                      <input type='text' placeholder='Search evaluators...' value={evaluatorSearch} onChange={(e) => setEvaluatorSearch(e.target.value)} className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none' />
+                  {/* ── Evaluator Selector ── */}
+                  <div className='rounded-xl border border-[#3a3a3a] flex flex-col' style={{height: '380px'}}>
+                    <div className='bg-[#2a2a2a] p-3 border-b border-[#3a3a3a] shrink-0'>
+                      <div className='flex items-center justify-between mb-2.5'>
+                        <h3 className='font-semibold text-white flex items-center gap-2 text-sm'>
+                          <FiUsers className='text-accent' /> Select Evaluator <span className='text-red-500'>*</span>
+                        </h3>
+                        <span className='text-[10px] text-[#9ca3af] bg-[#1f1f1f] px-2 py-0.5 rounded-full'>{filteredEvaluators.length} available</span>
+                      </div>
+                      <div className='relative'>
+                        <HiSearch className='absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] w-3.5 h-3.5' />
+                        <input
+                          type='text'
+                          placeholder='Search evaluators...'
+                          value={evaluatorSearch}
+                          onChange={(e) => setEvaluatorSearch(e.target.value)}
+                          className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg pl-8 pr-8 py-2 outline-none border border-transparent focus:border-accent/40'
+                        />
+                        {evaluatorSearch && (
+                          <button onClick={() => setEvaluatorSearch('')} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-white'>
+                            <HiX className='w-3.5 h-3.5' />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
-                      {filteredEvaluators.map((evUser) => (
-                        <div key={evUser.id} onClick={() => handleEvaluatorSelect(evUser)} className={`p-3 rounded-lg cursor-pointer mb-1 flex justify-between items-center ${selectedEvaluator?.id === evUser.id ? 'bg-accent/20 border border-accent/50' : 'hover:bg-[#2a2a2a]'}`}>
-                          <div className='text-white text-sm font-medium'>{evUser.displayName}</div>
-                          {selectedEvaluator?.id === evUser.id && <div className='w-2 h-2 rounded-full bg-accent' />}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className='rounded-xl border border-[#3a3a3a] flex flex-col h-[300px]'>
-                    <div className='bg-[#2a2a2a] p-4 border-b border-[#3a3a3a]'>
-                      <h3 className='font-semibold text-white flex items-center gap-2 mb-3'><FiUser className='text-accent' /> Select Referees <span className='text-red-500'>*</span></h3>
-                      <input type='text' placeholder='Search referees...' value={refereeSearch} onChange={(e) => setRefereeSearch(e.target.value)} className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 outline-none' />
-                    </div>
-                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f]'>
-                      {filteredReferees.map((ref) => {
-                        const isAssigned = assignedRefereeIdsForSelectedDateAndEvaluator.has(ref.id);
+                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f] custom-scrollbar overscroll-contain'>
+                      {filteredEvaluators.map((evUser) => {
+                        const isSelected = selectedEvaluator?.id === evUser.id;
                         return (
-                          <div key={ref.id} onClick={() => handleRefereeToggle(ref.id)} className={`p-3 rounded-lg cursor-pointer mb-1 flex justify-between items-center ${selectedReferees.includes(ref.id) ? 'bg-accent text-white' : 'hover:bg-[#2a2a2a] text-white'}`}>
+                          <div
+                            key={evUser.id}
+                            onClick={() => handleEvaluatorSelect(evUser)}
+                            className={`p-2.5 rounded-lg cursor-pointer mb-1 flex justify-between items-center transition-colors ${
+                              isSelected
+                                ? 'bg-accent/20 border border-accent/50'
+                                : 'hover:bg-[#2a2a2a] border border-transparent'
+                            }`}
+                          >
                             <div className='flex-1 min-w-0'>
-                              <div className='text-sm font-medium flex items-center gap-2'>{ref.displayName} {isAssigned && <span className='text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded'>Assigned</span>}</div>
-                              <div className='text-xs text-[#9ca3af]'>{ref.tier}</div>
+                              <div className='text-white text-sm font-medium'>
+                                {evUser.displayName}
+                              </div>
                             </div>
-                            {selectedReferees.includes(ref.id) && <HiPlus className='w-4 h-4 rotate-45' />}
+                            {isSelected && <div className='w-2 h-2 rounded-full bg-accent shrink-0' />}
                           </div>
                         );
                       })}
+                      {filteredEvaluators.length === 0 && (
+                        <div className='p-4 text-center text-xs text-[#9ca3af]'>
+                          {evaluatorSearch ? 'No evaluators match your search' : 'No active evaluators available'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Referee Selector ── */}
+                  <div className='rounded-xl border border-[#3a3a3a] flex flex-col' style={{height: '380px'}}>
+                    <div className='bg-[#2a2a2a] p-3 border-b border-[#3a3a3a] shrink-0'>
+                      <div className='flex items-center justify-between mb-2.5'>
+                        <h3 className='font-semibold text-white flex items-center gap-2 text-sm'>
+                          <FiUser className='text-accent' /> Select Referees <span className='text-red-500'>*</span>
+                        </h3>
+                        {/* All / Selected tabs */}
+                        <div className='flex items-center gap-1 bg-[#1f1f1f] rounded-lg p-0.5'>
+                          <button
+                            type='button'
+                            onClick={() => setRefereeTabFilter('all')}
+                            className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-colors ${
+                              refereeTabFilter === 'all'
+                                ? 'bg-[#2f2f2f] text-white'
+                                : 'text-[#9ca3af] hover:text-white'
+                            }`}
+                          >
+                            All
+                          </button>
+                          <button
+                            type='button'
+                            onClick={() => setRefereeTabFilter('selected')}
+                            className={`text-[10px] px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1 ${
+                              refereeTabFilter === 'selected'
+                                ? 'bg-accent text-white'
+                                : 'text-[#9ca3af] hover:text-white'
+                            }`}
+                          >
+                            Selected
+                            {selectedReferees.length > 0 && (
+                              <span className={`text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold ${
+                                refereeTabFilter === 'selected' ? 'bg-white/20' : 'bg-accent/80 text-white'
+                              }`}>
+                                {selectedReferees.length}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className='relative'>
+                        <HiSearch className='absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] w-3.5 h-3.5' />
+                        <input
+                          type='text'
+                          placeholder='Search referees...'
+                          value={refereeSearch}
+                          onChange={(e) => setRefereeSearch(e.target.value)}
+                          className='w-full bg-[#1f1f1f] text-white text-sm rounded-lg pl-8 pr-8 py-2 outline-none border border-transparent focus:border-accent/40'
+                        />
+                        {refereeSearch && (
+                          <button onClick={() => setRefereeSearch('')} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-white'>
+                            <HiX className='w-3.5 h-3.5' />
+                          </button>
+                        )}
+                      </div>
+                      {/* Selected referee pills */}
+                      {selectedReferees.length > 0 && refereeTabFilter === 'all' && (
+                        <div className='flex flex-wrap gap-1 mt-2 max-h-[52px] overflow-y-auto custom-scrollbar'>
+                          {selectedReferees.map(rid => {
+                            const ref = referees.find(r => r.id === rid);
+                            return (
+                              <span key={rid} className='flex items-center gap-1 text-[10px] bg-accent/20 text-accent border border-accent/30 rounded-full px-2 py-0.5'>
+                                {ref?.displayName || 'Unknown'}
+                                <button type='button' onClick={() => handleRefereeToggle(rid)} className='hover:text-white'>
+                                  <HiX className='w-2.5 h-2.5' />
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className='overflow-y-auto flex-1 p-2 bg-[#1f1f1f] custom-scrollbar overscroll-contain'>
+                      {filteredReferees.map((ref) => {
+                        const isAssigned = assignedRefereeIdsForSelectedDateAndEvaluator.has(ref.id);
+                        const isSelected = selectedReferees.includes(ref.id);
+                        return (
+                          <div
+                            key={ref.id}
+                            onClick={() => handleRefereeToggle(ref.id)}
+                            className={`p-2.5 rounded-lg cursor-pointer mb-1 flex justify-between items-center transition-colors border ${
+                              isSelected
+                                ? 'bg-accent/20 border-accent/50 text-white'
+                                : 'hover:bg-[#2a2a2a] text-white border-transparent'
+                            }`}
+                          >
+                            <div className='flex-1 min-w-0'>
+                              <div className='text-sm font-medium flex items-center gap-1.5 flex-wrap'>
+                                {ref.displayName}
+                                {isAssigned && (
+                                  <span className='text-[10px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded font-medium whitespace-nowrap'>
+                                    Assigned
+                                  </span>
+                                )}
+                              </div>
+                              {ref.tier && <div className='text-xs text-[#9ca3af] mt-0.5'>{ref.tier}</div>}
+                            </div>
+                            {isSelected && <HiX className='w-3.5 h-3.5 text-accent shrink-0 ml-1' />}
+                          </div>
+                        );
+                      })}
+                      {filteredReferees.length === 0 && (
+                        <div className='p-4 text-center text-xs text-[#9ca3af]'>
+                          {refereeTabFilter === 'selected'
+                            ? 'No referees selected yet'
+                            : refereeSearch
+                              ? 'No referees match your search'
+                              : 'No active referees available'}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -367,7 +645,7 @@ const AssignmentsPage = () => {
                 </div>
               </div>
 
-              {loading ? <div className='text-white text-center p-8'>Loading...</div> : (
+              {loading ? <EvaluationListSkeleton /> : (
                 <div className='space-y-8'>
                   {groupedAssignments.map(({ date: groupDate, items }) => (
                     <div key={groupDate} className='space-y-4'>

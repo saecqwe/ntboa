@@ -6,6 +6,7 @@ import { FaUser, FaCamera } from 'react-icons/fa';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '../../authentication/hooks/useAuth';
 import { updateUserProfile, changeUserPassword, logout } from '../../authentication/services/authService';
+import { compressImage, validateImageFile } from '@/lib/imageUtils';
 
 const RefereeProfilePage = () => {
   const router = useRouter();
@@ -61,6 +62,10 @@ const RefereeProfilePage = () => {
               .slice(0, 2)
           : 'U',
       });
+      const existingPhoto = userData?.photo || userData?.photoURL || null;
+      if (existingPhoto) {
+        setPhotoPreview(existingPhoto);
+      }
     }
   }, [userData, user]);
 
@@ -90,33 +95,45 @@ const RefereeProfilePage = () => {
   }, []);
 
   const handlePhotoClick = useCallback(() => {
-    // fileInputRef.current?.click();
-    // Disabled as per request
-    setMessage('Profile picture update is currently disabled.');
+    fileInputRef.current?.click();
   }, []);
 
-  const handlePhotoChange = useCallback((e) => {
+  const handlePhotoChange = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setMessage('Image size should be less than 5MB');
+    // Validate file type and size (up to 15MB before compression)
+    const validation = validateImageFile(file, 15);
+    if (!validation.valid) {
+      setMessage(validation.error);
       return;
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setMessage('Please select a valid image file');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoPreview(reader.result);
+    setMessage('Optimizing photo...');
+    try {
+      // Compress and resize client-side to ensure well under Firestore's 1MB limit
+      const compressedPhoto = await compressImage(file, {
+        maxWidth: 400,
+        maxHeight: 400,
+        quality: 0.82,
+      });
+      setPhotoPreview(compressedPhoto);
       setMessage('');
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Photo compression error:', err);
+      setMessage('Failed to process image. Please try another image.');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, []);
+
+  const handleRemovePhoto = useCallback(() => {
+    setPhotoPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   }, []);
 
   const handleSubmit = async (e) => {
@@ -130,6 +147,8 @@ const RefereeProfilePage = () => {
       await updateUserProfile(user.uid, {
         name: formData.name,
         phone: formData.phone,
+        photo: photoPreview || '',
+        photoURL: photoPreview || '',
       });
 
       await refreshUserData();
@@ -140,7 +159,7 @@ const RefereeProfilePage = () => {
       setMessage('Profile updated successfully!');
     } catch (error) {
       console.error(error);
-      setMessage('Failed to update profile. Please try again.');
+      setMessage(error.message || 'Failed to update profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -318,8 +337,6 @@ const RefereeProfilePage = () => {
                         </div>
                       )}
                     </div>
-                    {/* Disabled photo button */}
-                    {/*
                     <button
                       type='button'
                       onClick={handlePhotoClick}
@@ -328,21 +345,29 @@ const RefereeProfilePage = () => {
                     >
                       <FaCamera className='w-4 h-4' />
                     </button>
-                    */}
                   </div>
                 </div>
                 <div className='text-center sm:text-left'>
-                  {/*
-                  <button
-                    type='button'
-                    onClick={handlePhotoClick}
-                    className='bg-[#2b2b2b] hover:bg-[#3b3b3b] text-white px-4 py-2 rounded-lg font-medium transition-colors border border-[#3b3b3b]'
-                  >
-                    {photoPreview ? 'Change Photo' : 'Add Profile Photo'}
-                  </button>
-                  */}
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <button
+                      type='button'
+                      onClick={handlePhotoClick}
+                      className='bg-[#2b2b2b] hover:bg-[#3b3b3b] text-white px-4 py-2 rounded-lg font-medium transition-colors border border-[#3b3b3b]'
+                    >
+                      {photoPreview ? 'Change Photo' : 'Add Profile Photo'}
+                    </button>
+                    {photoPreview && (
+                      <button
+                        type='button'
+                        onClick={handleRemovePhoto}
+                        className='bg-red-600/20 hover:bg-red-600/30 text-red-400 px-3 py-2 rounded-lg font-medium transition-colors border border-red-500/30 text-sm'
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                   <p className='text-xs text-white/60 mt-2'>
-                    Profile photo updates are currently disabled.
+                    JPG, PNG, WebP (auto-optimized)
                   </p>
                 </div>
                 <input

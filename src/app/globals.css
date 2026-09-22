@@ -123,6 +123,32 @@ body::-webkit-scrollbar {
   display: none; /* Chrome, Safari and Opera */
 }
 
+/* Slim custom scrollbar for selector lists (overrides global hidden scrollbar) */
+.custom-scrollbar {
+  scrollbar-width: thin !important; /* Firefox */
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important; /* Firefox thumb/track */
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  display: block !important;
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 99px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  transition: background 0.2s;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
 /* Fluid responsive typography */
 .text-fluid-xs {
   font-size: clamp(0.625rem, 0.5rem + 0.5vw, 0.75rem); /* 10px - 12px */

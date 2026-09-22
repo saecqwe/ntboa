@@ -33,7 +33,7 @@ const BackButton = ({
     <button
       type='button'
       onClick={handleClick}
-      className={`w-10 h-10 lg:w-11 lg:h-11 rounded-full flex items-center justify-center transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${variantClasses} ${className}`}
+      className={`cursor-pointer w-10 h-10 lg:w-11 lg:h-11 rounded-full flex items-center justify-center transition-all active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${variantClasses} ${className}`}
       aria-label={ariaLabel}
     >
       <IoArrowBack className='w-5 h-5' />

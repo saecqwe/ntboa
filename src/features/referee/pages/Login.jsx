@@ -3,6 +3,8 @@ import { PiGlobeSimpleThin } from 'react-icons/pi';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { HiArrowLeft } from 'react-icons/hi';
+import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { login, logout, getUserDocument } from '@/features/authentication/services/authService';
 
@@ -86,7 +88,12 @@ const LoginPage = () => {
             </p>
           </div>
 
-          <div className='bg-[#FFFFFF]/10 rounded-3xl p-8 shadow-2xl border border-[#FFFFFF]/10'>
+          <div className='bg-[#FFFFFF]/10 rounded-3xl p-8 shadow-2xl border border-[#FFFFFF]/10 relative'>
+            {/* Back to Home Button */}
+            <div className='absolute top-6 left-6'>
+              <BackButton href='/' ariaLabel='Back to Home' />
+            </div>
+
             <div className='flex justify-center mb-6'>
               <div className='w-16 h-16 bg-[#FFFFFF]/20 rounded-full flex items-center justify-center'>
                 <PiGlobeSimpleThin className='w-8 h-8 text-foreground' />
@@ -155,6 +162,17 @@ const LoginPage = () => {
                   'Login'
                 )}
               </button>
+
+              {/* Back to Home / Switch User */}
+              <div className='pt-6 border-t border-white/10 text-center'>
+                <Link
+                  href='/'
+                  className='inline-flex items-center justify-center gap-2 text-sm text-white/70 hover:text-white transition-colors group text-body'
+                >
+                  <HiArrowLeft className='w-4 h-4 transition-transform group-hover:-translate-x-1' />
+                  <span>Back to Home (Choose different user type)</span>
+                </Link>
+              </div>
             </form>
           </div>
         </div>

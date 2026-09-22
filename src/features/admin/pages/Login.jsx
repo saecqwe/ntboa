@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
-import { HiOutlineMail, HiOutlineLockClosed } from 'react-icons/hi';
+import { HiOutlineMail, HiOutlineLockClosed, HiArrowLeft } from 'react-icons/hi';
+import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { login, logout, getUserDocument } from '@/features/authentication/services/authService';
 
@@ -56,6 +58,11 @@ const AdminLoginPage = () => {
   return (
     <div className='min-h-screen flex items-center justify-center bg-gradient-primary bg-grid-pattern px-4 py-8 relative overflow-hidden'>
       <div className='w-full max-w-[480px] lg:max-w-3xl px-8 py-12 lg:px-12 lg:py-12 bg-[#FFFFFF]/10 rounded-3xl p-8 shadow-2xl border border-[#FFFFFF]/10 relative z-10'>
+        {/* Back to Home Button */}
+        <div className='absolute top-6 left-6'>
+          <BackButton href='/' ariaLabel='Back to Home' />
+        </div>
+
         <div className='flex justify-center mb-6'>
           <div className='w-16 h-16 lg:w-20 lg:h-20 bg-[#3a3a3a] rounded-full flex items-center justify-center border border-[#4a4a4a]'>
             <PiGlobeSimpleThin className='w-9 h-9 lg:w-11 lg:h-11 text-white' />
@@ -135,6 +142,17 @@ const AdminLoginPage = () => {
                 </span>
               )}
             </button>
+          </div>
+
+          {/* Back to Home / Switch User */}
+          <div className='pt-6 border-t border-white/10 text-center'>
+            <Link
+              href='/'
+              className='inline-flex items-center justify-center gap-2 text-sm text-white/70 hover:text-white transition-colors group'
+            >
+              <HiArrowLeft className='w-4 h-4 transition-transform group-hover:-translate-x-1' />
+              <span>Back to Home (Choose different user type)</span>
+            </Link>
           </div>
         </form>
       </div>

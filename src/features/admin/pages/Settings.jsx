@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import Image from 'next/image';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { changeUserPassword } from '@/features/authentication/services/authService';
+import { changeUserPassword, updateUserProfile } from '@/features/authentication/services/authService';
+import { compressImage, validateImageFile } from '@/lib/imageUtils';
 import {
   HiMenu,
   HiOutlineUser,
@@ -21,7 +23,7 @@ const SETTING_SECTIONS = [
 ];
 
 const SettingsPage = () => {
-  const { user, userData } = useAuth();
+  const { user, userData, refreshUserData } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('profile');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -56,7 +58,7 @@ const SettingsPage = () => {
     }
     // Fallback: seed from Firebase Auth / Firestore userData
     if (user || userData) {
-      const displayName = userData?.displayName || user?.displayName || '';
+      const displayName = userData?.displayName || userData?.name || user?.displayName || '';
       const nameParts = displayName.trim().split(' ');
       setProfileData((prev) => ({
         ...prev,
@@ -64,6 +66,7 @@ const SettingsPage = () => {
         lastName: nameParts.slice(1).join(' ') || '',
         email: userData?.email || user?.email || '',
         phone: userData?.phone || '',
+        profilePhotoUrl: userData?.photo || userData?.photoURL || userData?.profilePhotoUrl || null,
       }));
     }
   }, [user, userData]);
@@ -91,14 +94,28 @@ const SettingsPage = () => {
 
   const handleSaveProfile = useCallback(async () => {
     setSaveStatus('saving');
-    // Simulate API call
-    setTimeout(() => {
-      // Save profile data to localStorage
+    try {
+      if (user?.uid) {
+        await updateUserProfile(user.uid, {
+          displayName: `${profileData.firstName} ${profileData.lastName}`.trim(),
+          name: `${profileData.firstName} ${profileData.lastName}`.trim(),
+          phone: profileData.phone,
+          photo: profileData.profilePhotoUrl || '',
+          photoURL: profileData.profilePhotoUrl || '',
+          profilePhotoUrl: profileData.profilePhotoUrl || '',
+        });
+        await refreshUserData?.();
+      }
+
       localStorage.setItem('ntboa_admin_profile', JSON.stringify(profileData));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 3000);
-    }, 1000);
-  }, [profileData]);
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      setSaveStatus('');
+      alert(err.message || 'Failed to save profile. Please try again.');
+    }
+  }, [profileData, user, refreshUserData]);
 
   const handlePasswordReset = useCallback(async () => {
     setPasswordError('');
@@ -139,53 +156,64 @@ const SettingsPage = () => {
     fileInputRef.current?.click();
   }, []);
 
-  const handlePhotoChange = useCallback((event) => {
+  const handlePhotoChange = useCallback(async (event) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Please select a valid image file');
-        return;
-      }
+    if (!file) return;
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Please select an image smaller than 5MB');
-        return;
-      }
+    const validation = validateImageFile(file, 15);
+    if (!validation.valid) {
+      alert(validation.error);
+      return;
+    }
 
-      // Create preview URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
+    try {
+      const photoUrl = await compressImage(file, {
+        maxWidth: 400,
+        maxHeight: 400,
+        quality: 0.82,
+      });
+
+      setProfilePhoto(photoUrl);
+      setProfileData((prev) => {
         const newProfileData = {
-          ...profileData,
-          profilePhotoUrl: e.target?.result,
+          ...prev,
+          profilePhotoUrl: photoUrl,
         };
-        setProfilePhoto(e.target?.result);
-        setProfileData(newProfileData);
-        // Save to localStorage immediately for real-time sync
-        localStorage.setItem(
-          'ntboa_admin_profile',
-          JSON.stringify(newProfileData)
-        );
-      };
-      reader.readAsDataURL(file);
+        try {
+          localStorage.setItem(
+            'ntboa_admin_profile',
+            JSON.stringify(newProfileData)
+          );
+        } catch (storageErr) {
+          console.warn('localStorage quota warning:', storageErr);
+        }
+        return newProfileData;
+      });
+    } catch (err) {
+      console.error('Error compressing image:', err);
+      alert('Failed to process image. Please try another file.');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   }, []);
 
   const handleRemovePhoto = useCallback(() => {
-    const newProfileData = {
-      ...profileData,
-      profilePhotoUrl: null,
-    };
     setProfilePhoto(null);
-    setProfileData(newProfileData);
-    // Save to localStorage immediately for real-time sync
-    localStorage.setItem('ntboa_admin_profile', JSON.stringify(newProfileData));
+    setProfileData((prev) => {
+      const newProfileData = {
+        ...prev,
+        profilePhotoUrl: null,
+      };
+      // Save to localStorage immediately for real-time sync
+      localStorage.setItem('ntboa_admin_profile', JSON.stringify(newProfileData));
+      return newProfileData;
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [profileData]);
+  }, []);
 
   const renderProfileSettings = () => (
     <div className='space-y-6'>
@@ -194,9 +222,11 @@ const SettingsPage = () => {
         <div className='relative flex-shrink-0'>
           <div className='w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center overflow-hidden'>
             {profileData.profilePhotoUrl ? (
-              <img
+              <Image
                 src={profileData.profilePhotoUrl}
                 alt='Profile'
+                width={96}
+                height={96}
                 className='w-full h-full object-cover'
               />
             ) : (

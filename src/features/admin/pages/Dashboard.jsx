@@ -20,75 +20,63 @@ import {
   Tooltip,
 } from 'recharts';
 
+// ---------------------------------------------------------------------------
+// Module-level cache — survives component unmounts (tab switches).
+// ---------------------------------------------------------------------------
+const DEFAULT_STATS = [
+  { id: 1, title: 'Total Officials', value: '0', icon: HiOutlineUsers, bgClass: 'bg-[#e0f2fe]', iconClass: 'text-[#0ea5e9]', link: '/admin/referees' },
+  { id: 2, title: 'Evaluations This Week', value: '0', icon: HiOutlineDocumentText, bgClass: 'bg-[#dbeafe]', iconClass: 'text-[#3b82f6]', link: '/admin/evaluations' },
+  { id: 3, title: 'Average Rating', value: '0', suffix: '/40', icon: HiStar, bgClass: 'bg-[#fef3c7]', iconClass: 'text-[#f59e0b]', link: '/admin/evaluators' },
+  { id: 4, title: 'Top Tier Officials', icon: FaTrophy, bgClass: 'bg-[#e9d5ff]', iconClass: 'text-[#a855f7]', list: [] },
+];
 
+let globalDashboardCache = {
+  allEvaluations: [],
+  chartData: [],
+  stats: DEFAULT_STATS,
+  loaded: false,
+  timestamp: 0,
+};
 
 const AdminDashboardPage = () => {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [allEvaluations, setAllEvaluations] = useState([]);
-  const [chartData, setChartData] = useState([]);
-  const [stats, setStats] = useState([
-    {
-      id: 1,
-      title: 'Total Officials',
-      value: '0',
-      icon: HiOutlineUsers,
-      bgClass: 'bg-[#e0f2fe]',
-      iconClass: 'text-[#0ea5e9]',
-      link: '/admin/referees',
-    },
-    {
-      id: 2,
-      title: 'Evaluations This Week',
-      value: '0',
-      icon: HiOutlineDocumentText,
-      bgClass: 'bg-[#dbeafe]',
-      iconClass: 'text-[#3b82f6]',
-      link: '/admin/evaluations',
-    },
-    {
-      id: 3,
-      title: 'Average Rating',
-      value: '0',
-      suffix: '/40',
-      icon: HiStar,
-      bgClass: 'bg-[#fef3c7]',
-      iconClass: 'text-[#f59e0b]',
-      link: '/admin/evaluators',
-    },
-    {
-      id: 4,
-      title: 'Top Tier Officials',
-      icon: FaTrophy,
-      bgClass: 'bg-[#e9d5ff]',
-      iconClass: 'text-[#a855f7]',
-      list: [],
-    },
-  ]);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize state from module-level cache for instant tab switch renders
+  const [allEvaluations, setAllEvaluations] = useState(() => globalDashboardCache.allEvaluations);
+  const [chartData, setChartData] = useState(() => globalDashboardCache.chartData);
+  const [stats, setStats] = useState(() => globalDashboardCache.stats);
+  const [loading, setLoading] = useState(() => !globalDashboardCache.loaded);
 
   useEffect(() => {
+    // Render immediately from cache on subsequent visits
+    if (globalDashboardCache.loaded) {
+      setAllEvaluations(globalDashboardCache.allEvaluations);
+      setChartData(globalDashboardCache.chartData);
+      setStats(globalDashboardCache.stats);
+      setLoading(false);
+    }
+
     const fetchData = async () => {
       try {
         // 1. Fetch All Users to build a lookup map
         const usersSnapshot = await getDocs(collection(db, 'users'));
         const userMap = {};
         const referees = [];
-        usersSnapshot.forEach((doc) => {
-          const data = doc.data();
-          userMap[doc.id] = data;
-          if (data.role === 'referee') {
-            referees.push(data);
-          }
+        usersSnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          userMap[docSnap.id] = data;
+          if (data.role === 'referee') referees.push(data);
         });
-
         const refereesCount = referees.length;
-        // Logic for top tier will be calculated after processing evaluations
 
-
-        // 2. Fetch All Evaluations
-        const evaluationsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'));
+        // 2. Fetch evaluations (capped at 500 to avoid unbounded scans)
+        const evaluationsQuery = query(
+          collection(db, 'evaluations'),
+          orderBy('createdAt', 'desc'),
+          limit(500)
+        );
         const evaluationsSnapshot = await getDocs(evaluationsQuery);
 
         const evaluationsData = evaluationsSnapshot.docs.map((doc) => {
@@ -156,51 +144,30 @@ const AdminDashboardPage = () => {
           evaluations: days[day],
         }));
 
+        // Build stats array for both setState and cache
+        const newStats = [
+          { id: 1, title: 'Total Officials', value: refereesCount.toString(), icon: HiOutlineUsers, bgClass: 'bg-[#e0f2fe]', iconClass: 'text-[#0ea5e9]', link: '/admin/referees' },
+          { id: 2, title: 'Evaluations This Week', value: evaluationsThisWeek.toString(), icon: HiOutlineDocumentText, bgClass: 'bg-[#dbeafe]', iconClass: 'text-[#3b82f6]', link: '/admin/evaluations' },
+          { id: 3, title: 'Average Rating', value: averageScore.toString(), suffix: '/40', icon: HiStar, bgClass: 'bg-[#fef3c7]', iconClass: 'text-[#f59e0b]', link: '/admin/evaluators' },
+          { id: 4, title: 'Top Tier Officials', icon: FaTrophy, bgClass: 'bg-[#e9d5ff]', iconClass: 'text-[#a855f7]', list: topReferees },
+        ];
+
         setAllEvaluations(evaluationsData);
         setChartData(newChartData);
+        setStats(newStats);
 
-        setStats([
-          {
-            id: 1,
-            title: 'Total Officials',
-            value: refereesCount.toString(),
-            icon: HiOutlineUsers,
-            bgClass: 'bg-[#e0f2fe]',
-            iconClass: 'text-[#0ea5e9]',
-            link: '/admin/referees',
-          },
-          {
-            id: 2,
-            title: 'Evaluations This Week',
-            value: evaluationsThisWeek.toString(),
-            icon: HiOutlineDocumentText,
-            bgClass: 'bg-[#dbeafe]',
-            iconClass: 'text-[#3b82f6]',
-            link: '/admin/evaluations',
-          },
-          {
-            id: 3,
-            title: 'Average Rating',
-            value: averageScore.toString(),
-            suffix: '/40',
-            icon: HiStar,
-            bgClass: 'bg-[#fef3c7]',
-            iconClass: 'text-[#f59e0b]',
-            link: '/admin/evaluators',
-          },
-          {
-            id: 4,
-            title: 'Top Tier Officials',
-            icon: FaTrophy,
-            bgClass: 'bg-[#e9d5ff]',
-            iconClass: 'text-[#a855f7]',
-            list: topReferees,
-          },
-        ]);
+        // Populate module-level cache for instant renders on next tab visit
+        globalDashboardCache = {
+          allEvaluations: evaluationsData,
+          chartData: newChartData,
+          stats: newStats,
+          loaded: true,
+          timestamp: Date.now(),
+        };
 
         setLoading(false);
       } catch (error) {
-        console.error("Error fetching dashboard data:", error);
+        console.error('Error fetching dashboard data:', error);
         setLoading(false);
       }
     };

@@ -8,6 +8,7 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiArrowLeft, HiPencil, HiCheck, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
+import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 
 const EvaluationDetailPage = () => {
   const router = useRouter();
@@ -26,13 +27,13 @@ const EvaluationDetailPage = () => {
         if (evalDoc.exists()) {
           const evalData = evalDoc.data();
 
-          // Fetch referee
-          const refereeDoc = await getDoc(doc(db, 'users', evalData.refereeId));
-          const refereeData = refereeDoc.exists() ? refereeDoc.data() : null;
+          // Parallelize fetching referee and evaluator docs to eliminate client waterfall
+          const refereePromise = evalData.refereeId ? getDoc(doc(db, 'users', evalData.refereeId)) : Promise.resolve(null);
+          const evaluatorPromise = evalData.evaluatorId ? getDoc(doc(db, 'users', evalData.evaluatorId)) : Promise.resolve(null);
 
-          // Fetch evaluator
-          const evaluatorDoc = await getDoc(doc(db, 'users', evalData.evaluatorId));
-          const evaluatorData = evaluatorDoc.exists() ? evaluatorDoc.data() : null;
+          const [refereeDoc, evaluatorDoc] = await Promise.all([refereePromise, evaluatorPromise]);
+          const refereeData = refereeDoc && refereeDoc.exists() ? refereeDoc.data() : null;
+          const evaluatorData = evaluatorDoc && evaluatorDoc.exists() ? evaluatorDoc.data() : null;
 
           setEvaluation({
             id: evalDoc.id,
@@ -185,11 +186,7 @@ const EvaluationDetailPage = () => {
   };
 
   if (loading) {
-    return (
-      <div className='flex min-h-screen bg-[#1a1a1a] items-center justify-center'>
-        <div className='text-white text-xl'>Loading evaluation details...</div>
-      </div>
-    );
+    return <EvaluationDetailSkeleton />;
   }
 
   if (!evaluation) {

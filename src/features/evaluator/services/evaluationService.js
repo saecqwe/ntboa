@@ -1,8 +1,8 @@
 import { db } from '@/services/firebase/config';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit, orderBy, startAfter, documentId } from 'firebase/firestore';
 
 /**
- * Fetches a single evaluation by ID with referee and evaluator details
+ * Fetches a single evaluation by ID with referee and evaluator details (parallelized).
  */
 export const getEvaluationById = async (evaluationId) => {
   try {
@@ -11,64 +11,71 @@ export const getEvaluationById = async (evaluationId) => {
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      
-      // Fetch referee details or group evaluation metadata
-      let referee = { name: 'Unknown', email: '', tier: '' };
-      if (data.refereeIds && Array.isArray(data.refereeIds)) {
-        if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
-          referee.name = data.refereeNames.length > 2
-            ? `${data.refereeNames.slice(0,2).join(', ')} +${data.refereeNames.length - 2} more`
-            : data.refereeNames.join(', ');
-        } else if (Array.isArray(data.officials) && data.officials.length > 0) {
-          referee.name = data.officials.length > 2
-            ? `${data.officials.slice(0,2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
-            : data.officials.map((o) => o.name).join(', ');
-        } else {
-          referee.name = `Group Evaluation (${data.refereeIds.length} Officials)`;
-        }
-        referee.tier = data.tier || '';
-      } else if (data.refereeId) {
-        const refereeDoc = await getDoc(doc(db, 'users', data.refereeId));
-        if (refereeDoc.exists()) {
-          const refData = refereeDoc.data();
-          referee = {
-            name: refData.displayName || refData.name || 'Unknown',
-            email: refData.email || '',
-            tier: refData.tier || '',
-          };
-        }
-      }
 
-      // Fetch evaluator details
-      let evaluator = { name: 'Unknown', email: '' };
-      if (data.evaluatorId) {
-        const evaluatorDoc = await getDoc(doc(db, 'users', data.evaluatorId));
-        if (evaluatorDoc.exists()) {
-          const evalData = evaluatorDoc.data();
-          evaluator = {
-            name: evalData.displayName || evalData.name || 'Unknown',
-            email: evalData.email || '',
-          };
+      // Parallelize referee and evaluator fetches
+      const refereePromise = (async () => {
+        let referee = { name: 'Unknown', email: '', tier: '' };
+        if (data.refereeIds && Array.isArray(data.refereeIds)) {
+          if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
+            referee.name = data.refereeNames.length > 2
+              ? `${data.refereeNames.slice(0, 2).join(', ')} +${data.refereeNames.length - 2} more`
+              : data.refereeNames.join(', ');
+          } else if (Array.isArray(data.officials) && data.officials.length > 0) {
+            referee.name = data.officials.length > 2
+              ? `${data.officials.slice(0, 2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
+              : data.officials.map((o) => o.name).join(', ');
+          } else {
+            referee.name = `Group Evaluation (${data.refereeIds.length} Officials)`;
+          }
+          referee.tier = data.tier || '';
+        } else if (data.refereeId) {
+          const refDoc = await getDoc(doc(db, 'users', data.refereeId));
+          if (refDoc.exists()) {
+            const refData = refDoc.data();
+            referee = {
+              name: refData.displayName || refData.name || 'Unknown',
+              email: refData.email || '',
+              tier: refData.tier || '',
+            };
+          }
         }
-      }
+        return referee;
+      })();
+
+      const evaluatorPromise = (async () => {
+        let evaluator = { name: 'Unknown', email: '' };
+        if (data.evaluatorId) {
+          const evalDoc = await getDoc(doc(db, 'users', data.evaluatorId));
+          if (evalDoc.exists()) {
+            const evalData = evalDoc.data();
+            evaluator = {
+              name: evalData.displayName || evalData.name || 'Unknown',
+              email: evalData.email || '',
+            };
+          }
+        }
+        return evaluator;
+      })();
+
+      const [referee, evaluator] = await Promise.all([refereePromise, evaluatorPromise]);
 
       return {
         id: docSnap.id,
         ...data,
         referee,
         evaluator,
-        gameDateFormatted: data.gameDate 
-            ? new Date(data.gameDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            : '',
-        gameTimeFormatted: data.gameDate
-            ? new Date(data.gameDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-            : '',
-        location: data.location || 'Unknown Location',
-        date: data.createdAt?.toDate 
-          ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) 
+        gameDateFormatted: data.gameDate
+          ? new Date(data.gameDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
           : '',
-        time: data.createdAt?.toDate 
-          ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) 
+        gameTimeFormatted: data.gameDate
+          ? new Date(data.gameDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+          : '',
+        location: data.location || 'Unknown Location',
+        date: data.createdAt?.toDate
+          ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+          : '',
+        time: data.createdAt?.toDate
+          ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
           : '',
       };
     } else {
@@ -81,59 +88,81 @@ export const getEvaluationById = async (evaluationId) => {
 };
 
 /**
- * Fetches all evaluations for a specific evaluator
+ * Fetches evaluations for a specific evaluator without N+1 query waterfall.
+ * Uses denormalized metadata when present, and batches any missing referee lookups.
+ * Supports optional limit and cursor for pagination.
  */
-export const getEvaluationsByEvaluator = async (evaluatorId) => {
+export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = 50, lastDoc = null } = {}) => {
   try {
-    const q = query(
-      collection(db, 'evaluations'),
-      where('evaluatorId', '==', evaluatorId)
-    );
-    
-    const querySnapshot = await getDocs(q);
-    
-    // We use docSnap here to avoid shadowing the imported 'doc' function
-    const evaluations = await Promise.all(querySnapshot.docs.map(async (docSnap) => {
-      const data = docSnap.data();
-      
-      let refereeName = 'Unknown';
-      if (data.refereeId) {
-        try {
-          const refereeDoc = await getDoc(doc(db, 'users', data.refereeId));
-          if (refereeDoc.exists()) {
-            const refData = refereeDoc.data();
-            refereeName = refData.displayName || refData.name || 'Unknown';
-          }
-        } catch (e) {
-          console.error('Error fetching referee for list:', e);
-        }
-      }
+    const queryConstraints = [
+      where('evaluatorId', '==', evaluatorId),
+      limit(pageSize)
+    ];
 
-      const evaluation = {
-        id: docSnap.id,
-        ...data,
-        refereeName,
-        maxScore: data.maxScore || 40,
-        // Keep as Date object for initial sorting
-        date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0), 
-      };
+    if (lastDoc) {
+      queryConstraints.push(startAfter(lastDoc));
+    }
+
+    const q = query(collection(db, 'evaluations'), ...queryConstraints);
+    const querySnapshot = await getDocs(q);
+
+    // Collect distinct refereeIds that need name resolution
+    const missingRefereeIds = new Set();
+    const rawEvals = querySnapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      let refereeName = data.refereeName || null;
 
       if (data.refereeIds && Array.isArray(data.refereeIds)) {
         if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
-          evaluation.refereeName = data.refereeNames.length > 2
-            ? `${data.refereeNames.slice(0,2).join(', ')} +${data.refereeNames.length - 2} more`
+          refereeName = data.refereeNames.length > 2
+            ? `${data.refereeNames.slice(0, 2).join(', ')} +${data.refereeNames.length - 2} more`
             : data.refereeNames.join(', ');
         } else if (Array.isArray(data.officials) && data.officials.length > 0) {
-          evaluation.refereeName = data.officials.length > 2
-            ? `${data.officials.slice(0,2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
+          refereeName = data.officials.length > 2
+            ? `${data.officials.slice(0, 2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
             : data.officials.map((o) => o.name).join(', ');
-        } else {
-          evaluation.refereeName = `Group Evaluation (${data.refereeIds.length} Officials)`;
         }
       }
 
-      return evaluation;
-    }));
+      if (!refereeName && data.refereeId) {
+        missingRefereeIds.add(data.refereeId);
+      }
+
+      return {
+        id: docSnap.id,
+        ...data,
+        refereeName: refereeName || 'Unknown',
+        maxScore: data.maxScore || 40,
+        date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0),
+        _doc: docSnap,
+      };
+    });
+
+    // Batch fetch missing referees (in chunks of up to 30 for Firestore 'in' query) to eliminate N+1 queries
+    const refereeMap = {};
+    const missingIdList = Array.from(missingRefereeIds);
+
+    for (let i = 0; i < missingIdList.length; i += 30) {
+      const chunk = missingIdList.slice(i, i + 30);
+      if (chunk.length > 0) {
+        try {
+          const userSnap = await getDocs(query(collection(db, 'users'), where(documentId(), 'in', chunk)));
+          userSnap.forEach((u) => {
+            const uData = u.data();
+            refereeMap[u.id] = uData.displayName || uData.name || 'Unknown';
+          });
+        } catch (e) {
+          console.error('Error batch fetching referee names:', e);
+        }
+      }
+    }
+
+    const evaluations = rawEvals.map((ev) => {
+      if (ev.refereeName === 'Unknown' && ev.refereeId && refereeMap[ev.refereeId]) {
+        return { ...ev, refereeName: refereeMap[ev.refereeId] };
+      }
+      return ev;
+    });
 
     return evaluations.sort((a, b) => b.date - a.date);
   } catch (error) {

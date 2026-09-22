@@ -188,14 +188,14 @@ const RefereeDashboardPage = () => {
             className='w-12 h-12 rounded-full bg-white/15 flex items-center justify-center text-base font-semibold heading text-white transition-all hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white overflow-hidden'
             aria-label='Open profile'
           >
-            {userData.photoURL ? (
+            {(userData.photoURL || userData.photo) ? (
               <img
-                src={userData.photoURL}
+                src={userData.photoURL || userData.photo}
                 alt='Profile'
                 className='w-full h-full object-cover'
               />
             ) : (
-              userData.displayName ? userData.displayName.substring(0, 2).toUpperCase() : 'RF'
+              (userData.displayName || userData.name) ? (userData.displayName || userData.name).substring(0, 2).toUpperCase() : 'RF'
             )}
           </Link>
         </div>
