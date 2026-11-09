@@ -9,72 +9,113 @@ import BackButton from '@/ui/BackButton';
 import { HiMenu, HiArrowLeft } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 
+// Module-level cache across tab navigations
+const globalRefereeDetailCache = new Map();
+
 const RefereeDetailPage = () => {
   const router = useRouter();
   const params = useParams();
+  const cachedData = params?.id ? globalRefereeDetailCache.get(params.id) : null;
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [referee, setReferee] = useState(null);
-  const [evaluations, setEvaluations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [referee, setReferee] = useState(() => cachedData?.referee || null);
+  const [evaluations, setEvaluations] = useState(() => cachedData?.evaluations || []);
+  const [loading, setLoading] = useState(() => !cachedData);
 
   useEffect(() => {
     const fetchRefereeData = async () => {
       try {
         if (!params.id) return;
 
-        // Fetch Referee Details
+        // Step 1: Fetch referee doc AND evaluations IN PARALLEL
         const refereeDocRef = doc(db, 'users', params.id);
-        const refereeDocSnap = await getDoc(refereeDocRef);
+        const evalsQuery = query(
+          collection(db, 'evaluations'),
+          where('refereeId', '==', params.id)
+        );
+
+        const [refereeDocSnap, querySnapshot] = await Promise.all([
+          getDoc(refereeDocRef),
+          getDocs(evalsQuery)
+        ]);
 
         if (refereeDocSnap.exists()) {
-          setReferee({ id: refereeDocSnap.id, ...refereeDocSnap.data() });
+          const refereeData = { id: refereeDocSnap.id, ...refereeDocSnap.data() };
+          setReferee(refereeData);
         } else {
           toast.error("Referee not found");
           setLoading(false);
           return;
         }
 
-        // Fetch Evaluations for this Referee
-        const q = query(
-          collection(db, 'evaluations'),
-          where('refereeId', '==', params.id)
-        );
-        
-        const querySnapshot = await getDocs(q);
-        const evals = [];
-        
-        // We need to fetch evaluator names for each evaluation
-        const evaluatorPromises = querySnapshot.docs.map(async (docSnapshot) => {
-           const evalData = docSnapshot.data();
-           let evaluatorName = 'Unknown';
-           if (evalData.evaluatorId) {
-             try {
-                const evaluatorDoc = await getDoc(doc(db, 'users', evalData.evaluatorId));
-                if (evaluatorDoc.exists()) {
-                    evaluatorName = evaluatorDoc.data().displayName || 'Unknown';
-                }
-             } catch (err) {
-                 console.error("Error fetching evaluator", err);
-             }
-           }
+        // Step 2: Collect unique evaluator IDs to avoid N+1 queries and normalize evaluation scores
+        const uniqueEvaluatorIds = new Set();
+        const rawEvals = querySnapshot.docs.map((docSnapshot) => {
+          const evalData = docSnapshot.data();
+          if (evalData.evaluatorId) {
+            uniqueEvaluatorIds.add(evalData.evaluatorId);
+          }
 
-           return {
-             id: docSnapshot.id,
-             ...evalData,
-             evaluatorName,
-             // Format date safely
-             date: evalData.createdAt?.seconds 
-                ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
-                : 'N/A',
-             // Store raw timestamp for sorting
-             timestamp: evalData.createdAt?.seconds || 0
-           };
+          // Normalize scores/ratings if nested under official_0
+          let rawScores = evalData.scores || evalData.ratings || {};
+          if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
+            rawScores = rawScores.official_0;
+          }
+
+          // Extract or calculate total score from ratings
+          let totalScore = evalData.totalScore ?? evalData.overallScore ?? evalData.score;
+          if (totalScore === undefined || totalScore === null || totalScore === 0) {
+            const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
+            if (scoreValues.length > 0) {
+              totalScore = scoreValues.reduce((a, b) => a + b, 0);
+            } else {
+              totalScore = 0;
+            }
+          }
+
+          return {
+            id: docSnapshot.id,
+            ...evalData,
+            totalScore,
+            date: evalData.createdAt?.seconds
+              ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              : 'N/A',
+            timestamp: evalData.createdAt?.seconds || 0
+          };
         });
 
-        const resolvedEvals = await Promise.all(evaluatorPromises);
-        
+        // Step 3: Fetch each unique evaluator ONCE (not once per evaluation)
+        const evaluatorMap = {};
+        const evaluatorPromises = Array.from(uniqueEvaluatorIds).map(async (evaluatorId) => {
+          try {
+            const evaluatorDoc = await getDoc(doc(db, 'users', evaluatorId));
+            if (evaluatorDoc.exists()) {
+              evaluatorMap[evaluatorId] = evaluatorDoc.data().displayName || 'Unknown';
+            } else {
+              evaluatorMap[evaluatorId] = 'Unknown';
+            }
+          } catch (err) {
+            console.error("Error fetching evaluator", err);
+            evaluatorMap[evaluatorId] = 'Unknown';
+          }
+        });
+
+        await Promise.all(evaluatorPromises);
+
+        // Step 4: Map evaluator names back to evaluations
+        const resolvedEvals = rawEvals.map(ev => ({
+          ...ev,
+          evaluatorName: evaluatorMap[ev.evaluatorId] || 'Unknown',
+        }));
+
         // Client-side sort by date descending
         resolvedEvals.sort((a, b) => b.timestamp - a.timestamp);
+
+        const currentRef = { id: refereeDocSnap.id, ...refereeDocSnap.data() };
+        globalRefereeDetailCache.set(params.id, {
+          referee: currentRef,
+          evaluations: resolvedEvals
+        });
 
         setEvaluations(resolvedEvals);
         setLoading(false);
@@ -90,6 +131,12 @@ const RefereeDetailPage = () => {
   }, [params.id]);
 
 
+  // Calculate average score dynamically from evaluations
+  const totalScoreFromEvals = evaluations.reduce((acc, curr) => acc + (Number(curr.totalScore) || 0), 0);
+  const avgScoreCalculated = evaluations.length > 0
+    ? (totalScoreFromEvals / evaluations.length).toFixed(1)
+    : (referee?.avgScore || 0);
+
   // Stats configuration
   const stats = [
     {
@@ -101,7 +148,7 @@ const RefereeDetailPage = () => {
     {
       id: 'score',
       label: 'Average Score',
-      value: referee?.avgScore || 0,
+      value: avgScoreCalculated,
       suffix: '/40',
       type: 'number',
     },
@@ -278,7 +325,7 @@ const RefereeDetailPage = () => {
                             {evaluation.evaluatorName}
                             </td>
                             <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap'>
-                            {evaluation.totalScore}
+                            {evaluation.totalScore > 0 ? `${evaluation.totalScore}/40` : (evaluation.totalScore || 'N/A')}
                             </td>
                             <td className='py-3 lg:py-4 px-2 lg:px-4'>
                             <span className='inline-block px-4 py-1.5 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>

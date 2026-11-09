@@ -10,14 +10,59 @@ import { HiMenu, HiArrowLeft, HiPencil, HiCheck, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 
+// Module-level cache across tab navigations
+const globalEvaluationDetailCache = new Map();
+
+const OFFICIAL_CATEGORIES = [
+  { label: 'Positioning & Court Coverage', key: 'positioning', max: 5 },
+  { label: 'Game Management & Control', key: 'gameManagement', max: 5 },
+  { label: 'Rules Knowledge & Application', key: 'rulesKnowledge', max: 5 },
+  { label: 'Mechanics & Signals', key: 'mechanics', max: 5 },
+  { label: 'Consistency & Accuracy', key: 'consistency', max: 5 },
+  { label: 'Professional Demeanor', key: 'demeanor', max: 5 },
+  { label: 'Decision Making Speed', key: 'decisionSpeed', max: 5 },
+  { label: 'Team Collaboration', key: 'collaboration', max: 5 },
+];
+
+const LEGACY_CATEGORIES = [
+  { label: 'Court Presence', key: 'courtPresence', max: 5 },
+  { label: 'Communication', key: 'communication', max: 5 },
+  { label: 'Game Management', key: 'gameManagement', max: 5 },
+  { label: 'Rules Knowledge', key: 'rulesKnowledge', max: 5 },
+  { label: 'Physical Fitness', key: 'physicalFitness', max: 5 },
+  { label: 'Professionalism', key: 'professionalism', max: 5 },
+];
+
+// Helper to extract score for a category, checking common key aliases
+const getCategoryScore = (scores, key) => {
+  if (!scores) return 0;
+  if (typeof scores[key] === 'number') return scores[key];
+  const aliases = {
+    demeanor: 'professionalism',
+    professionalism: 'demeanor',
+    collaboration: 'communication',
+    communication: 'collaboration',
+    positioning: 'courtPresence',
+    courtPresence: 'positioning',
+    mechanics: 'physicalFitness',
+    physicalFitness: 'mechanics',
+  };
+  if (aliases[key] && typeof scores[aliases[key]] === 'number') {
+    return scores[aliases[key]];
+  }
+  return 0;
+};
+
 const EvaluationDetailPage = () => {
   const router = useRouter();
   const params = useParams();
+  const cachedData = params?.id ? globalEvaluationDetailCache.get(params.id) : null;
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [evaluation, setEvaluation] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [evaluation, setEvaluation] = useState(() => cachedData?.evaluation || null);
+  const [loading, setLoading] = useState(() => !cachedData);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState(null);
+  const [editForm, setEditForm] = useState(() => cachedData?.editForm || null);
 
   useEffect(() => {
     const fetchEvaluation = async () => {
@@ -35,7 +80,33 @@ const EvaluationDetailPage = () => {
           const refereeData = refereeDoc && refereeDoc.exists() ? refereeDoc.data() : null;
           const evaluatorData = evaluatorDoc && evaluatorDoc.exists() ? evaluatorDoc.data() : null;
 
-          setEvaluation({
+          // Normalize scores & ratings (unwrapping official_0 or official if nested)
+          let rawScores = evalData.scores || evalData.ratings || {};
+          if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
+            rawScores = rawScores.official_0;
+          } else if (rawScores.official && typeof rawScores.official === 'object') {
+            rawScores = rawScores.official;
+          }
+
+          // Normalize comments (unwrapping official_0 if nested)
+          let rawComments = evalData.comments || {};
+          if (rawComments.official_0 && typeof rawComments.official_0 === 'object') {
+            rawComments = rawComments.official_0;
+          }
+
+          // Calculate total score if missing or zero
+          let totalScore = evalData.totalScore ?? evalData.overallScore ?? evalData.score;
+          const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
+          if ((totalScore === undefined || totalScore === null || totalScore === 0) && scoreValues.length > 0) {
+            totalScore = scoreValues.reduce((a, b) => a + b, 0);
+          }
+          if (totalScore === undefined || totalScore === null) {
+            totalScore = 0;
+          }
+
+          const maxScore = evalData.maxScore || (scoreValues.length > 0 ? scoreValues.length * 5 : 40);
+
+          const formattedEvaluation = {
             id: evalDoc.id,
             ...evalData,
             date: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', {
@@ -47,32 +118,40 @@ const EvaluationDetailPage = () => {
               hour: '2-digit',
               minute: '2-digit'
             }) : 'N/A',
-            gameDetails: evalData.game || 'N/A',
+            gameDetails: evalData.game || evalData.gameDetails || 'N/A',
             location: evalData.location || 'N/A',
             referee: {
-              name: refereeData?.displayName || 'Unknown',
+              name: refereeData?.displayName || evalData.refereeName || 'Unknown',
               email: refereeData?.email || 'N/A',
               tier: refereeData?.tier || evalData.tier || 'N/A',
             },
             evaluator: {
-              name: evaluatorData?.displayName || 'Unknown',
+              name: evaluatorData?.displayName || evalData.evaluatorName || 'Unknown',
               email: evaluatorData?.email || 'N/A',
             },
-            scores: evalData.scores || {},
-            totalScore: evalData.totalScore || 0,
-            maxScore: 30,
+            scores: rawScores,
+            totalScore,
+            maxScore,
             tierAssigned: evalData.tier || refereeData?.tier || 'N/A',
-            comments: evalData.comments || '',
-            recommendations: evalData.recommendations || evalData.feedback || 'None provided.',
+            comments: rawComments,
+            recommendations: evalData.recommendations || evalData.feedback || evalData.groupComment || 'None provided.',
             submittedAt: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toISOString() : null,
-          });
-          // Initialize edit form
-          setEditForm({
-            scores: evalData.scores || {},
-            comments: evalData.comments || '',
-            recommendations: evalData.recommendations || evalData.feedback || '',
+          };
+
+          const initialEditForm = {
+            scores: { ...rawScores },
+            comments: rawComments,
+            recommendations: evalData.recommendations || evalData.feedback || evalData.groupComment || '',
             tierAssigned: evalData.tier || refereeData?.tier || 'N/A',
+          };
+
+          globalEvaluationDetailCache.set(params.id, {
+            evaluation: formattedEvaluation,
+            editForm: initialEditForm,
           });
+
+          setEvaluation(formattedEvaluation);
+          setEditForm(initialEditForm);
         }
         setLoading(false);
       } catch (error) {
@@ -84,14 +163,15 @@ const EvaluationDetailPage = () => {
     fetchEvaluation();
   }, [params.id]);
 
-  const scoreCategories = [
-    { label: 'Court Presence', key: 'courtPresence', max: 5 },
-    { label: 'Communication', key: 'communication', max: 5 },
-    { label: 'Game Management', key: 'gameManagement', max: 5 },
-    { label: 'Rules Knowledge', key: 'rulesKnowledge', max: 5 },
-    { label: 'Physical Fitness', key: 'physicalFitness', max: 5 },
-    { label: 'Professionalism', key: 'professionalism', max: 5 },
-  ];
+  const activeCategories = React.useMemo(() => {
+    if (!evaluation?.scores) return OFFICIAL_CATEGORIES;
+    const keys = Object.keys(evaluation.scores);
+    const hasOfficial = OFFICIAL_CATEGORIES.some(c => keys.includes(c.key));
+    if (hasOfficial) return OFFICIAL_CATEGORIES;
+    const hasLegacy = LEGACY_CATEGORIES.some(c => keys.includes(c.key));
+    if (hasLegacy) return LEGACY_CATEGORIES;
+    return OFFICIAL_CATEGORIES;
+  }, [evaluation?.scores]);
 
   const getScoreColor = (score, max) => {
     const percentage = (score / max) * 100;
@@ -169,15 +249,21 @@ const EvaluationDetailPage = () => {
 
       toast.success("Evaluation updated successfully!");
 
-      // Update local state
-      setEvaluation(prev => ({
-        ...prev,
+      // Update local state and cache
+      const updatedEval = {
+        ...evaluation,
         scores: editForm.scores,
         totalScore: newTotalScore,
         comments: editForm.comments,
         recommendations: editForm.recommendations,
         tierAssigned: editForm.tierAssigned,
-      }));
+      };
+      globalEvaluationDetailCache.set(params.id, {
+        evaluation: updatedEval,
+        editForm: { ...editForm },
+      });
+
+      setEvaluation(updatedEval);
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating evaluation:", error);
@@ -349,10 +435,10 @@ const EvaluationDetailPage = () => {
                 Detailed Scores
               </h3>
               <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                {scoreCategories.map((category) => {
+                {activeCategories.map((category) => {
                   const score = isEditing
-                    ? (editForm.scores[category.key] || 0)
-                    : (evaluation.scores[category.key] || 0);
+                    ? (editForm.scores?.[category.key] ?? getCategoryScore(editForm.scores, category.key))
+                    : getCategoryScore(evaluation.scores, category.key);
 
                   return (
                     <div
@@ -421,14 +507,19 @@ const EvaluationDetailPage = () => {
                     placeholder="Enter comments..."
                   />
                 ) : (
-                  typeof evaluation.comments === 'object' ? (
+                  typeof evaluation.comments === 'object' && evaluation.comments !== null ? (
                     <div className='space-y-4'>
-                      {Object.entries(evaluation.comments).map(([category, comment]) => (
+                      {Object.entries(evaluation.comments)
+                        .filter(([_, c]) => c && typeof c === 'string' && c.trim().length > 0)
+                        .map(([category, comment]) => (
                         <div key={category}>
                           <div className='text-sm text-[#9ca3af] capitalize mb-1'>{category.replace(/([A-Z])/g, ' $1')}</div>
                           <p className='text-white/90 leading-relaxed'>{comment}</p>
                         </div>
                       ))}
+                      {Object.values(evaluation.comments).filter(c => c && typeof c === 'string' && c.trim().length > 0).length === 0 && (
+                        <p className='text-white/90 leading-relaxed'>No comments provided.</p>
+                      )}
                     </div>
                   ) : (
                     <p className='text-white/90 leading-relaxed'>

@@ -45,81 +45,109 @@ const RefereesPage = () => {
       setLoading(false);
     }
 
-    const fetchRefereesAndEvaluations = async () => {
-      try {
-        const q = query(collection(db, 'users'), where('role', '==', 'referee'));
+    // Step 1: Set up real-time listener for referees FIRST — shows the list immediately
+    const q = query(collection(db, 'users'), where('role', '==', 'referee'));
+    
+    // Track whether we've loaded enrichment data
+    let enrichmentData = null;
 
-        // Pre-fetch evaluations and assignments in parallel before snapshot
+    const enrichReferees = (refereesList) => {
+      if (!enrichmentData) return refereesList;
+      const { allEvaluations, allAssignments } = enrichmentData;
+      const now = new Date();
+
+      return refereesList.map(referee => {
+        const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
+        const evalCount = refereeEvals.length;
+        const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
+        const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
+        const latestEval = refereeEvals[0];
+        const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
+
+        const myAssignments = allAssignments.filter(a =>
+          a.refereeIds && a.refereeIds.includes(referee.id)
+        );
+        const futureAssignments = myAssignments
+          .map(a => ({
+            ...a,
+            dateObj: a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate)
+          }))
+          .sort((a, b) => a.dateObj - b.dateObj);
+
+        const nextGame = futureAssignments[0];
+        const nextAssignmentData = nextGame ? {
+          location: nextGame.location,
+          game: 'Scheduled Match',
+          dateTime: nextGame.dateObj.toISOString()
+        } : null;
+
+        return {
+          ...referee,
+          evaluations: evalCount,
+          avgScore,
+          suggestedTier,
+          nextAssignment: nextAssignmentData,
+        };
+      });
+    };
+
+    // Hoist unsubscribe into the ref so useEffect cleanup can call it
+    unsubscribeRef.current = onSnapshot(q, (querySnapshot) => {
+      const refereesList = [];
+      querySnapshot.forEach((docSnap) => {
+        refereesList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      const refereesWithStats = enrichReferees(refereesList);
+
+      // Update module-level cache
+      globalRefereesCache = {
+        referees: refereesWithStats,
+        loaded: true,
+        timestamp: Date.now(),
+      };
+
+      setReferees(refereesWithStats);
+      setLoading(false);
+    });
+
+    // Step 2: Load evaluations and assignments in the BACKGROUND
+    const loadEnrichmentData = async () => {
+      try {
+        const now = new Date();
         const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'), limit(200));
+        // Only fetch future assignments instead of the entire collection
+        const assignmentsQuery = query(
+          collection(db, 'assignments'),
+          where('scheduledDate', '>=', now)
+        );
+
         const [evalsSnapshot, assignmentsSnapshot] = await Promise.all([
           getDocs(evalsQuery),
-          getDocs(collection(db, 'assignments'))
+          getDocs(assignmentsQuery)
         ]);
+
         const allEvaluations = evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         const allAssignments = assignmentsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        // Hoist unsubscribe into the ref so useEffect cleanup can call it
-        unsubscribeRef.current = onSnapshot(q, (querySnapshot) => {
-          const refereesList = [];
-          querySnapshot.forEach((docSnap) => {
-            refereesList.push({ id: docSnap.id, ...docSnap.data() });
-          });
+        enrichmentData = { allEvaluations, allAssignments };
 
-          const now = new Date();
-
-          const refereesWithStats = refereesList.map(referee => {
-            const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
-            const evalCount = refereeEvals.length;
-            const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
-            const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
-            const latestEval = refereeEvals[0];
-            const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
-
-            const myAssignments = allAssignments.filter(a =>
-              a.refereeIds && a.refereeIds.includes(referee.id)
-            );
-            const futureAssignments = myAssignments
-              .map(a => ({
-                ...a,
-                dateObj: a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate)
-              }))
-              .filter(a => a.dateObj > now)
-              .sort((a, b) => a.dateObj - b.dateObj);
-
-            const nextGame = futureAssignments[0];
-            const nextAssignmentData = nextGame ? {
-              location: nextGame.location,
-              game: 'Scheduled Match',
-              dateTime: nextGame.dateObj.toISOString()
-            } : null;
-
-            return {
-              ...referee,
-              evaluations: evalCount,
-              avgScore,
-              suggestedTier,
-              nextAssignment: nextAssignmentData,
-            };
-          });
-
-          // Update module-level cache so next tab switch is instant
+        // Re-enrich current referees with the loaded data
+        setReferees(prev => {
+          const enriched = enrichReferees(prev);
           globalRefereesCache = {
-            referees: refereesWithStats,
+            referees: enriched,
             loaded: true,
             timestamp: Date.now(),
           };
-
-          setReferees(refereesWithStats);
-          setLoading(false);
+          return enriched;
         });
       } catch (error) {
-        console.error('Error fetching data:', error);
-        toast.error('Failed to load data.');
-        setLoading(false);
+        console.error('Error fetching enrichment data:', error);
       }
     };
 
-    fetchRefereesAndEvaluations();
+    loadEnrichmentData();
 
     // Cleanup: unsubscribe from Firestore listener when component unmounts
     return () => {

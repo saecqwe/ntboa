@@ -34,18 +34,19 @@ const RefereeSchedulePage = () => {
           collection(db, 'assignments'),
           where('refereeIds', 'array-contains', userData.uid)
         );
-        const snapshot = await getDocs(q);
+        const evaluatorsQuery = query(collection(db, 'users'), where('role', '==', 'evaluator'));
+
+        // Fetch assignments and evaluators in parallel
+        const [snapshot, evaluatorsSnap] = await Promise.all([
+          getDocs(q),
+          getDocs(evaluatorsQuery)
+        ]);
         const allAssignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         const now = new Date();
         const upcoming = [];
         const past = [];
 
-        // Need to fetch evaluator names potentially, or just store IDs. 
-        // For simplicity, we'll fetch evaluators if needed, but assignments have evaluatorId.
-        // Let's fetch all evaluators to map names.
-        const evaluatorsQuery = query(collection(db, 'users'), where('role', '==', 'evaluator'));
-        const evaluatorsSnap = await getDocs(evaluatorsQuery);
         const evaluatorsMap = {};
         evaluatorsSnap.docs.forEach(doc => {
             evaluatorsMap[doc.id] = doc.data().displayName;

@@ -1,5 +1,5 @@
 import { db } from '@/services/firebase/config';
-import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot, documentId } from 'firebase/firestore';
 
 export const getDashboardData = async (userId) => {
   if (!userId) {
@@ -11,20 +11,64 @@ export const getDashboardData = async (userId) => {
   }
 
   try {
+    // 1. Parallelize fetching evaluations and assignments for this evaluator
     const evaluationsRef = collection(db, 'evaluations');
-    const q = query(
+    const evalsQuery = query(
       evaluationsRef,
       where('evaluatorId', '==', userId)
     );
+    const assignmentsRef = collection(db, 'assignments');
+    const assignmentsQuery = query(
+      assignmentsRef,
+      where('evaluatorId', '==', userId)
+    );
 
-    const querySnapshot = await getDocs(q);
-    const evaluations = querySnapshot.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }))
+    const [evalSnapshot, assignmentsSnapshot] = await Promise.all([
+      getDocs(evalsQuery),
+      getDocs(assignmentsQuery)
+    ]);
+
+    const evaluations = evalSnapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
         return dateB - dateA; // Descending order
       });
+
+    const allAssignments = assignmentsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+
+    // 2. Gather ALL referee user IDs across recent evaluations AND assignments to fetch in batch
+    const refereeIdsToFetch = new Set();
+    const recentDocs = evaluations.slice(0, 3);
+    recentDocs.forEach((ev) => {
+      if (ev.refereeId) refereeIdsToFetch.add(ev.refereeId);
+    });
+
+    allAssignments.forEach((asgn) => {
+      if (asgn.refereeIds && Array.isArray(asgn.refereeIds)) {
+        asgn.refereeIds.forEach((rid) => refereeIdsToFetch.add(rid));
+      }
+    });
+
+    // 3. Batch-fetch users in chunks of 30 to completely eliminate N+1 queries
+    const userMap = {};
+    const idArray = Array.from(refereeIdsToFetch);
+    for (let i = 0; i < idArray.length; i += 30) {
+      const chunk = idArray.slice(i, i + 30);
+      if (chunk.length > 0) {
+        try {
+          const userSnap = await getDocs(
+            query(collection(db, 'users'), where(documentId(), 'in', chunk))
+          );
+          userSnap.forEach((uDoc) => {
+            userMap[uDoc.id] = uDoc.data();
+          });
+        } catch (batchErr) {
+          console.error('Error batch fetching referee users:', batchErr);
+        }
+      }
+    }
 
     // Calculate Stats
     const totalEvaluations = evaluations.length;
@@ -33,58 +77,42 @@ export const getDashboardData = async (userId) => {
     // Average Rating (1-5 scale)
     const averageRating = totalMaxScoreSum > 0 ? (totalScoreSum / totalMaxScoreSum * 5).toFixed(1) : 0;
 
-    // Recent Evaluations (Top 3)
-    const recentDocs = evaluations.slice(0, 3);
-    const recentEvaluations = await Promise.all(
-      recentDocs.map(async (ev) => {
-        let name = 'Unknown Official';
-        let tier = ev.tier ? `Tier ${ev.tier}` : 'N/A';
+    // Recent Evaluations (Top 3) — resolved instantly via userMap
+    const recentEvaluations = recentDocs.map((ev) => {
+      let name = 'Unknown Official';
+      let tier = ev.tier ? `Tier ${ev.tier}` : 'N/A';
 
-        if (ev.refereeIds && Array.isArray(ev.refereeIds)) {
-          if (Array.isArray(ev.refereeNames) && ev.refereeNames.length > 0) {
-            name = ev.refereeNames.length > 2
-              ? `${ev.refereeNames.slice(0, 2).join(', ')} +${ev.refereeNames.length - 2} more`
-              : ev.refereeNames.join(', ');
-          } else if (Array.isArray(ev.officials) && ev.officials.length > 0) {
-            name = ev.officials.length > 2
-              ? `${ev.officials.slice(0, 2).map((o) => o.name).join(', ')} +${ev.officials.length - 2} more`
-              : ev.officials.map((o) => o.name).join(', ');
-          } else {
-            name = `Group Evaluation (${ev.refereeIds.length} Officials)`;
-          }
-        } else if (ev.refereeId) {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', ev.refereeId));
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
-              name = userData.displayName || userData.name || 'Unknown';
-              tier = userData.tier || tier;
-            }
-          } catch (err) {
-            console.error('Error fetching referee', err);
-          }
+      if (ev.refereeIds && Array.isArray(ev.refereeIds)) {
+        if (Array.isArray(ev.refereeNames) && ev.refereeNames.length > 0) {
+          name = ev.refereeNames.length > 2
+            ? `${ev.refereeNames.slice(0, 2).join(', ')} +${ev.refereeNames.length - 2} more`
+            : ev.refereeNames.join(', ');
+        } else if (Array.isArray(ev.officials) && ev.officials.length > 0) {
+          name = ev.officials.length > 2
+            ? `${ev.officials.slice(0, 2).map((o) => o.name).join(', ')} +${ev.officials.length - 2} more`
+            : ev.officials.map((o) => o.name).join(', ');
+        } else {
+          name = `Group Evaluation (${ev.refereeIds.length} Officials)`;
         }
+      } else if (ev.refereeId) {
+        const userData = userMap[ev.refereeId];
+        if (userData) {
+          name = userData.displayName || userData.name || 'Unknown';
+          tier = userData.tier || tier;
+        }
+      }
 
-        return {
-          id: ev.id,
-          name,
-          date: ev.createdAt?.toDate
-            ? ev.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-            : '',
-          score: `${ev.totalScore}/${ev.maxScore || 40}`,
-          tier,
-        };
-      })
-    );
+      return {
+        id: ev.id,
+        name,
+        date: ev.createdAt?.toDate
+          ? ev.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : '',
+        score: `${ev.totalScore}/${ev.maxScore || 40}`,
+        tier,
+      };
+    });
 
-    // Fetch All Assignments for Stats & Upcoming List
-    const assignmentsRef = collection(db, 'assignments');
-    const assignmentsQuery = query(
-      assignmentsRef,
-      where('evaluatorId', '==', userId)
-    );
-    
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
     const now = new Date();
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - now.getDay());
@@ -96,8 +124,6 @@ export const getDashboardData = async (userId) => {
     let assignmentsUpcoming = 0;
     let assignmentsDoneThisWeek = 0;
     let assignmentsMissed = 0;
-
-    const allAssignments = assignmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
@@ -123,17 +149,14 @@ export const getDashboardData = async (userId) => {
         }
 
         // Missed (60 min rule)
-        // Check if status is pending AND current time is > scheduled time + 60 mins
         const sixtyMinsAfter = new Date(scheduledDate.getTime() + 60 * 60 * 1000);
         if (asgn.status !== 'completed' && now > sixtyMinsAfter) {
             assignmentsMissed++;
         }
     });
     
-    // Filter for relevant assignments:
-    // 1. All Pending (Upcoming & Missed)
-    // 2. Completed (Done) ONLY from this week
-    const relevantAssignments = await Promise.all(allAssignments
+    // Filter for relevant assignments resolved synchronously from userMap
+    const relevantAssignments = allAssignments
       .filter(a => {
          const scheduledDate = a.scheduledDate?.toDate ? a.scheduledDate.toDate() : new Date(a.scheduledDate);
          const isCompletedThisWeek = a.status === 'completed' && scheduledDate >= startOfWeek && scheduledDate < endOfWeek;
@@ -145,51 +168,44 @@ export const getDashboardData = async (userId) => {
          const d2 = b.scheduledDate?.toDate ? b.scheduledDate.toDate() : new Date(b.scheduledDate);
          return d1 - d2;
       })
-      .map(async (asgn) => {
+      .map((asgn) => {
          const scheduledDate = asgn.scheduledDate?.toDate ? asgn.scheduledDate.toDate() : new Date(asgn.scheduledDate);
          const isMissed = asgn.status !== 'completed' && now > new Date(scheduledDate.getTime() + 60 * 60 * 1000);
          
-         let refereeDetails = [];
+         const refereeDetails = [];
          if (asgn.refereeIds && Array.isArray(asgn.refereeIds)) {
             for (const rid of asgn.refereeIds) {
-                try {
-                    const rDoc = await getDoc(doc(db, 'users', rid));
-                    if (rDoc.exists()) {
-                        const rData = rDoc.data();
-                        refereeDetails.push({
-                            id: rid,
-                            name: rData.displayName || 'Unknown',
-                            tier: rData.tier || 'N/A'
-                        });
-                    }
-                } catch (e) {
-                    console.error("Error fetching referee details for assignment", e);
+                const rData = userMap[rid];
+                if (rData) {
+                    refereeDetails.push({
+                        id: rid,
+                        name: rData.displayName || 'Unknown',
+                        tier: rData.tier || 'N/A'
+                    });
+                } else {
+                    refereeDetails.push({
+                        id: rid,
+                        name: 'Unknown',
+                        tier: 'N/A'
+                    });
                 }
             }
          }
          return {
             id: asgn.id,
             location: asgn.location,
-            status: asgn.status, // Pass status through
+            status: asgn.status,
             date: scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
             time: scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             rawDate: scheduledDate.toISOString(),
             refereeDetails, 
             isMissed
          };
-      }));
+      });
 
     // Quick Overview
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startWeekEval = new Date(now);
-    startWeekEval.setDate(now.getDate() - now.getDay());
-    startWeekEval.setHours(0, 0, 0, 0);
-
     const thisMonth = evaluations.filter((e) => e.createdAt?.toDate() >= startOfMonth).length;
-    
-    // We can use the assignments stats for "this week" instead of evaluations if that's what the user wants,
-    // but the prompt asked for "assignments this week".
-    // I will map the new stats to the quickOverview object.
     
     return {
       stats: {
@@ -201,7 +217,7 @@ export const getDashboardData = async (userId) => {
       recentEvaluations,
       relevantAssignments,
       quickOverview: {
-        thisMonth, // Evaluations this month (kept for legacy/context)
+        thisMonth,
         assignmentsThisWeek: assignmentsToday + assignmentsUpcoming + assignmentsDoneThisWeek,
         assignmentsDone: assignmentsDoneThisWeek,
         assignmentsMissed,

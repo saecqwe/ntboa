@@ -3,44 +3,44 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export const getReferees = async (evaluatorId) => {
   try {
-    // 1. Fetch all referees
     const refereesQuery = query(
       collection(db, 'users'),
       where('role', '==', 'referee')
     );
-    const refereesSnapshot = await getDocs(refereesQuery);
+    const assignmentsQuery = evaluatorId
+      ? query(collection(db, 'assignments'), where('evaluatorId', '==', evaluatorId))
+      : null;
+
+    // Fetch referees and assignments in parallel
+    const [refereesSnapshot, assignmentsSnapshot] = await Promise.all([
+      getDocs(refereesQuery),
+      assignmentsQuery ? getDocs(assignmentsQuery) : Promise.resolve(null),
+    ]);
+
     const referees = refereesSnapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
-    // 2. Fetch assignments if evaluatorId is present
+    // Build assignment map
     const assignmentMap = {};
-    if (evaluatorId) {
-      const assignmentsQuery = query(
-        collection(db, 'assignments'),
-        where('evaluatorId', '==', evaluatorId)
-      );
-      const assignmentsSnapshot = await getDocs(assignmentsQuery);
-      
-      const now = new Date();
-
-      assignmentsSnapshot.docs.forEach(doc => {
+    if (assignmentsSnapshot) {
+      assignmentsSnapshot.docs.forEach((doc) => {
         const data = doc.data();
-        // Handle Firestore Timestamp or string dates
-        const scheduledDate = data.scheduledDate?.toDate ? data.scheduledDate.toDate() : new Date(data.scheduledDate);
-        
-        // Since an assignment can have multiple referees
+        const scheduledDate = data.scheduledDate?.toDate
+          ? data.scheduledDate.toDate()
+          : new Date(data.scheduledDate);
+
         if (data.refereeIds && Array.isArray(data.refereeIds)) {
-          data.refereeIds.forEach(refId => {
+          data.refereeIds.forEach((refId) => {
             if (!assignmentMap[refId]) {
-                assignmentMap[refId] = [];
+              assignmentMap[refId] = [];
             }
             assignmentMap[refId].push({
-                assignmentId: doc.id,
-                location: data.location,
-                dateTime: scheduledDate.toISOString(),
-                rawDate: scheduledDate
+              assignmentId: doc.id,
+              location: data.location,
+              dateTime: scheduledDate.toISOString(),
+              rawDate: scheduledDate,
             });
           });
         }
