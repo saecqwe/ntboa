@@ -8,6 +8,7 @@ import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { db, auth } from '@/services/firebase/config';
 import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 const RefereeDashboardPage = () => {
   const router = useRouter();
@@ -42,7 +43,6 @@ const RefereeDashboardPage = () => {
   useEffect(() => {
     if (!userData) return;
 
-    setLoading(true);
     const now = new Date();
 
     // ── Real-time listener: Assignments ──────────────────────────────────────
@@ -84,18 +84,28 @@ const RefereeDashboardPage = () => {
       setLoading(false);
     });
 
-    // ── Real-time listener: Evaluations ──────────────────────────────────────
-    const qEvals = query(
+    // ── Real-time listener: Evaluations (supports both single & group crew evals) ─
+    const qEvalsSingle = query(
       collection(db, 'evaluations'),
       where('refereeId', '==', userData.uid)
     );
+    const qEvalsGroup = query(
+      collection(db, 'evaluations'),
+      where('refereeIds', 'array-contains', userData.uid)
+    );
 
-    const unsubscribeEvals = onSnapshot(qEvals, (evalSnap) => {
-      const total = evalSnap.size;
+    const evalsMap = new Map();
+
+    const recalculateStats = () => {
+      const total = evalsMap.size;
       let sumScore = 0;
-      evalSnap.forEach((doc) => {
-        const data = doc.data();
-        sumScore += data.overallScore || data.totalScore || 0;
+      evalsMap.forEach((data) => {
+        const refScores = getScoresForReferee(data, userData.uid);
+        let s = data.overallScore || data.totalScore;
+        if (!s) {
+          s = getOfficialTotalScore(refScores);
+        }
+        sumScore += Number(s) || 0;
       });
 
       const currentTierPoints = userData.tierPoints || 150;
@@ -107,13 +117,22 @@ const RefereeDashboardPage = () => {
         tierMin: 100,
         tierMax: 300,
       });
-    }, (err) => {
-      console.error('Error in evaluations listener:', err);
-    });
+    };
+
+    const unsubscribeEvalsSingle = onSnapshot(qEvalsSingle, (snap) => {
+      snap.forEach((doc) => evalsMap.set(doc.id, doc.data()));
+      recalculateStats();
+    }, (err) => console.error('Error in evaluations single listener:', err));
+
+    const unsubscribeEvalsGroup = onSnapshot(qEvalsGroup, (snap) => {
+      snap.forEach((doc) => evalsMap.set(doc.id, doc.data()));
+      recalculateStats();
+    }, (err) => console.error('Error in evaluations group listener:', err));
 
     return () => {
       unsubscribeAssignments();
-      unsubscribeEvals();
+      unsubscribeEvalsSingle();
+      unsubscribeEvalsGroup();
     };
   }, [userData]);
 

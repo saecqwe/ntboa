@@ -8,6 +8,7 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiArrowLeft } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
+import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 // Module-level cache across tab navigations
 const globalRefereeDetailCache = new Map();
@@ -27,16 +28,21 @@ const RefereeDetailPage = () => {
       try {
         if (!params.id) return;
 
-        // Step 1: Fetch referee doc AND evaluations IN PARALLEL
+        // Step 1: Fetch referee doc AND evaluations IN PARALLEL (supports both single & group evals)
         const refereeDocRef = doc(db, 'users', params.id);
-        const evalsQuery = query(
+        const evalsQuerySingle = query(
           collection(db, 'evaluations'),
           where('refereeId', '==', params.id)
         );
+        const evalsQueryGroup = query(
+          collection(db, 'evaluations'),
+          where('refereeIds', 'array-contains', params.id)
+        );
 
-        const [refereeDocSnap, querySnapshot] = await Promise.all([
+        const [refereeDocSnap, snapSingle, snapGroup] = await Promise.all([
           getDoc(refereeDocRef),
-          getDocs(evalsQuery)
+          getDocs(evalsQuerySingle),
+          getDocs(evalsQueryGroup),
         ]);
 
         if (refereeDocSnap.exists()) {
@@ -48,29 +54,25 @@ const RefereeDetailPage = () => {
           return;
         }
 
+        // Merge and deduplicate evaluations by doc.id
+        const evalDocsMap = new Map();
+        snapSingle.docs.forEach((d) => evalDocsMap.set(d.id, d));
+        snapGroup.docs.forEach((d) => evalDocsMap.set(d.id, d));
+        const combinedDocs = Array.from(evalDocsMap.values());
+
         // Step 2: Collect unique evaluator IDs to avoid N+1 queries and normalize evaluation scores
         const uniqueEvaluatorIds = new Set();
-        const rawEvals = querySnapshot.docs.map((docSnapshot) => {
+        const rawEvals = combinedDocs.map((docSnapshot) => {
           const evalData = docSnapshot.data();
           if (evalData.evaluatorId) {
             uniqueEvaluatorIds.add(evalData.evaluatorId);
           }
 
-          // Normalize scores/ratings if nested under official_0
-          let rawScores = evalData.scores || evalData.ratings || {};
-          if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
-            rawScores = rawScores.official_0;
-          }
-
-          // Extract or calculate total score from ratings
+          // Extract referee-specific scores & calculate total score
+          const refScores = getScoresForReferee(evalData, params.id);
           let totalScore = evalData.totalScore ?? evalData.overallScore ?? evalData.score;
           if (totalScore === undefined || totalScore === null || totalScore === 0) {
-            const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
-            if (scoreValues.length > 0) {
-              totalScore = scoreValues.reduce((a, b) => a + b, 0);
-            } else {
-              totalScore = 0;
-            }
+            totalScore = getOfficialTotalScore(refScores);
           }
 
           return {

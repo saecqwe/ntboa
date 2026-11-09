@@ -10,6 +10,7 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
+import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 // ---------------------------------------------------------------------------
 // Module-level cache — survives component unmounts (tab switches).
@@ -51,9 +52,16 @@ const RefereesPage = () => {
       const now = new Date();
 
       return refereesList.map(referee => {
-        const refereeEvals = allEvaluations.filter(e => e.refereeId === referee.id);
+        const refereeEvals = allEvaluations.filter(e =>
+          e.refereeId === referee.id ||
+          (Array.isArray(e.refereeIds) && e.refereeIds.includes(referee.id)) ||
+          (Array.isArray(e.officials) && e.officials.some(o => o.id === referee.id))
+        );
         const evalCount = refereeEvals.length;
-        const totalScore = refereeEvals.reduce((acc, curr) => acc + (curr.totalScore || 0), 0);
+        const totalScore = refereeEvals.reduce((acc, curr) => {
+          const score = getOfficialTotalScore(getScoresForReferee(curr, referee.id)) || curr.totalScore || 0;
+          return acc + Number(score);
+        }, 0);
         const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
         const latestEval = refereeEvals[0];
         const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';

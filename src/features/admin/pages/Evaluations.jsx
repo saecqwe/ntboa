@@ -9,6 +9,16 @@ import BackButton from '@/ui/BackButton';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
+import {
+  OFFICIAL_CATEGORIES,
+  LEGACY_CATEGORIES,
+  getCategoryScore,
+  getEvaluationOfficials,
+  getScoresForOfficial,
+  getCommentsForOfficial,
+  getOfficialTotalScore,
+} from '@/lib/evaluationUtils';
+
 // ---------------------------------------------------------------------------
 // Module-level cache — survives component unmounts (tab switches).
 // ---------------------------------------------------------------------------
@@ -18,15 +28,6 @@ let globalEvaluationsCache = {
   loaded: false,
   timestamp: 0,
 };
-
-const scoreCategories = [
-  { label: 'Court Presence', key: 'courtPresence', max: 5 },
-  { label: 'Communication', key: 'communication', max: 5 },
-  { label: 'Game Management', key: 'gameManagement', max: 5 },
-  { label: 'Rules Knowledge', key: 'rulesKnowledge', max: 5 },
-  { label: 'Physical Fitness', key: 'physicalFitness', max: 5 },
-  { label: 'Professionalism', key: 'professionalism', max: 5 },
-];
 
 const getScoreColor = (score, max) => {
   if (!score) return 'text-gray-400';
@@ -64,6 +65,7 @@ const EvaluationsPage = () => {
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEvaluation, setSelectedEvaluation] = useState(null);
+  const [modalActiveTab, setModalActiveTab] = useState(0);
 
   // Initialize from module-level cache for instant tab switch renders
   const [evaluations, setEvaluations] = useState(() => globalEvaluationsCache.evaluations);
@@ -211,12 +213,14 @@ const EvaluationsPage = () => {
 
   const handleViewEvaluation = (evaluation) => {
     setSelectedEvaluation(evaluation);
+    setModalActiveTab(0);
     setShowDetailModal(true);
   };
 
   const handleCloseModal = () => {
     setShowDetailModal(false);
     setSelectedEvaluation(null);
+    setModalActiveTab(0);
   };
 
   // Filter evaluations
@@ -550,133 +554,201 @@ const EvaluationsPage = () => {
 
           {/* Modal */}
           <div className='relative bg-[#1a1a1a] rounded-[20px] w-full max-w-4xl max-h-[90vh] overflow-y-auto hide-scrollbar z-10'>
-            {/* Header */}
-            <div className='bg-accent rounded-t-[20px] px-6 py-5'>
-              <h2 className='text-fluid-3xl font-bold text-white heading mb-2'>
-                {selectedEvaluation.refereeName}
-              </h2>
-              <p className='text-fluid-base text-white/90 text-body'>
-                {new Date(selectedEvaluation.createdAt.seconds * 1000).toLocaleDateString()} • Evaluator: {selectedEvaluation.evaluatorName}
-              </p>
-            </div>
+            {(() => {
+              const modalOfficials = getEvaluationOfficials(selectedEvaluation);
+              const activeOfficial = modalOfficials[modalActiveTab] || modalOfficials[0] || { name: selectedEvaluation.refereeName, tier: selectedEvaluation.tier };
+              const activeScores = getScoresForOfficial(selectedEvaluation, activeOfficial.index ?? modalActiveTab);
+              const activeComments = getCommentsForOfficial(selectedEvaluation, activeOfficial.index ?? modalActiveTab);
+              const activeTotalScore = getOfficialTotalScore(activeScores) || selectedEvaluation.totalScore || 0;
 
-            {/* Content */}
-            <div className='p-6'>
-              {/* Category Scores */}
-              <h3 className='text-fluid-2xl font-semibold text-white heading mb-4'>
-                Category Scores
-              </h3>
+              const presentScoreKeys = Object.keys(activeScores);
+              const hasOfficialCategories = OFFICIAL_CATEGORIES.some(c => presentScoreKeys.includes(c.key));
+              const modalCategories = hasOfficialCategories ? OFFICIAL_CATEGORIES : LEGACY_CATEGORIES;
+              const modalMaxScore = modalCategories.reduce((acc, cat) => acc + cat.max, 0);
 
-              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6'>
-                {scoreCategories.map((category) => {
-                  const score = selectedEvaluation.scores?.[category.key] || 0;
-                  return (
-                    <div
-                      key={category.key}
-                      className={`rounded-lg p-4 border ${getScoreBackground(score, category.max)}`}
-                    >
-                      <div className='flex items-center justify-between mb-2'>
-                        <span className='text-fluid-base text-white text-body'>
-                          {category.label}
-                        </span>
-                        <span className={`text-fluid-lg font-bold ${getScoreColor(score, category.max)}`}>
-                          {score}/{category.max}
-                        </span>
-                      </div>
-                      {/* Progress Bar */}
-                      <div className='w-full bg-[#1a1a1a] rounded-full h-2 overflow-hidden'>
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${score > 0 ? getScoreColor(score, category.max).replace('text-', 'bg-') : 'bg-transparent'}`}
-                          style={{ width: `${(score / category.max) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Summary Section */}
-              <div className='bg-accent rounded-[20px] px-6 py-5 mb-6'>
-                <div className='grid grid-cols-3 gap-4'>
-                  {/* Total Score */}
-                  <div>
-                    <div className='text-fluid-base text-white/80 text-body mb-1'>
-                      Total Score
-                    </div>
-                    <div className='text-fluid-4xl font-bold text-white heading'>
-                      {selectedEvaluation.totalScore}/{scoreCategories.reduce((acc, cat) => acc + cat.max, 0)}
-                    </div>
-                  </div>
-
-                  {/* Previous Tier */}
-                  <div>
-                    <div className='text-fluid-base text-white/80 text-body mb-1'>
-                      Previous Tier
-                    </div>
-                    <div className='text-fluid-4xl font-bold text-white heading'>
-                      {selectedEvaluation.previousTier || 'N/A'}
-                    </div>
-                  </div>
-
-                  {/* Suggested Tier */}
-                  <div>
-                    <div className='text-fluid-base text-white/80 text-body mb-1'>
-                      Suggested Tier
-                    </div>
-                    <div className='text-fluid-4xl font-bold text-white heading'>
-                      {selectedEvaluation.suggestedTier || 'N/A'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Comments */}
-              <h3 className='text-fluid-2xl font-semibold text-white heading mb-4'>
-                Comments
-              </h3>
-
-              <div className='space-y-4 mb-6'>
-                {selectedEvaluation.comments && typeof selectedEvaluation.comments === 'object' ? (
-                  Object.keys(selectedEvaluation.comments).length > 0 ? (
-                    Object.entries(selectedEvaluation.comments).map(([category, comment]) => (
-                      <div
-                        key={category}
-                        className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'
-                      >
-                        <div className='text-fluid-lg font-semibold text-white text-body mb-2 capitalize'>
-                          {category.replace(/([A-Z])/g, ' $1')}
-                        </div>
-                        <div className='text-fluid-base text-[#9ca3af] text-body'>
-                          {typeof comment === 'string' ? comment : JSON.stringify(comment)}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className='text-[#9ca3af] text-fluid-base'>No specific comments provided.</p>
-                  )
-                ) : (
-                  <div className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'>
-                    <p className='text-fluid-base text-[#9ca3af] text-body'>
-                      {selectedEvaluation.comments || selectedEvaluation.groupComment || 'No comments provided.'}
+              return (
+                <>
+                  {/* Header */}
+                  <div className='bg-accent rounded-t-[20px] px-6 py-5'>
+                    <h2 className='text-fluid-3xl font-bold text-white heading mb-2'>
+                      {modalOfficials.length > 1
+                        ? `${activeOfficial.name} (Official ${modalActiveTab + 1} of ${modalOfficials.length})`
+                        : (activeOfficial.name || selectedEvaluation.refereeName || 'Evaluation')}
+                    </h2>
+                    <p className='text-fluid-base text-white/90 text-body'>
+                      {selectedEvaluation.createdAtDate ? selectedEvaluation.createdAtDate.toLocaleDateString() : 'N/A'} • Evaluator: {selectedEvaluation.evaluatorName}
                     </p>
                   </div>
-                )}
-              </div>
 
-              <div className='flex gap-3'>
-                <button
-                  onClick={handleCloseModal}
-                  className='flex-1 bg-[#2a2a2a] hover:bg-[#333333] border border-[#3a3a3a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-lg'
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => router.push(`/admin/evaluations/${selectedEvaluation.id}`)}
-                  className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg'
-                >
-                  View Full Details
-                </button>
-              </div>
+                  {/* Content */}
+                  <div className='p-6'>
+                    {/* Official Switcher Tabs if group evaluation */}
+                    {modalOfficials.length > 1 && (
+                      <div className='mb-6 bg-[#242424] p-3 rounded-2xl border border-[#3a3a3a]'>
+                        <div className='text-xs text-[#9ca3af] font-semibold uppercase tracking-wider mb-2.5'>
+                          Select Official in Group Evaluation:
+                        </div>
+                        <div className='flex items-center gap-2 overflow-x-auto pb-1'>
+                          {modalOfficials.map((off, idx) => (
+                            <button
+                              key={off.id || idx}
+                              type='button'
+                              onClick={() => setModalActiveTab(idx)}
+                              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                modalActiveTab === idx
+                                  ? 'bg-accent text-white shadow-md'
+                                  : 'bg-[#1a1a1a] text-[#9ca3af] hover:text-white hover:bg-[#2e2e2e]'
+                              }`}
+                            >
+                              {off.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Category Scores */}
+                    <div className='flex items-center justify-between mb-4'>
+                      <h3 className='text-fluid-2xl font-semibold text-white heading'>
+                        Category Scores
+                      </h3>
+                      {modalOfficials.length > 1 && (
+                        <span className='text-xs text-white/80 bg-accent/20 border border-accent/40 px-3 py-1 rounded-full'>
+                          Showing scores for: <strong className='text-white'>{activeOfficial.name}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6'>
+                      {modalCategories.map((category) => {
+                        const score = getCategoryScore(activeScores, category.key);
+                        return (
+                          <div
+                            key={category.key}
+                            className={`rounded-lg p-4 border ${getScoreBackground(score, category.max)}`}
+                          >
+                            <div className='flex items-center justify-between mb-2'>
+                              <span className='text-fluid-base text-white text-body'>
+                                {category.label}
+                              </span>
+                              <span className={`text-fluid-lg font-bold ${getScoreColor(score, category.max)}`}>
+                                {score}/{category.max}
+                              </span>
+                            </div>
+                            {/* Progress Bar */}
+                            <div className='w-full bg-[#1a1a1a] rounded-full h-2 overflow-hidden'>
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${score > 0 ? getScoreColor(score, category.max).replace('text-', 'bg-') : 'bg-transparent'}`}
+                                style={{ width: `${(score / category.max) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Summary Section */}
+                    <div className='bg-accent rounded-[20px] px-6 py-5 mb-6'>
+                      <div className='grid grid-cols-3 gap-4'>
+                        {/* Total Score */}
+                        <div>
+                          <div className='text-fluid-base text-white/80 text-body mb-1'>
+                            Total Score
+                          </div>
+                          <div className='text-fluid-4xl font-bold text-white heading'>
+                            {activeTotalScore}/{modalMaxScore}
+                          </div>
+                        </div>
+
+                        {/* Current Tier */}
+                        <div>
+                          <div className='text-fluid-base text-white/80 text-body mb-1'>
+                            Current Tier
+                          </div>
+                          <div className='text-fluid-4xl font-bold text-white heading'>
+                            {activeOfficial.tier || selectedEvaluation.tier || 'N/A'}
+                          </div>
+                        </div>
+
+                        {/* Suggested Tier */}
+                        <div>
+                          <div className='text-fluid-base text-white/80 text-body mb-1'>
+                            Suggested Tier
+                          </div>
+                          <div className='text-fluid-4xl font-bold text-white heading'>
+                            {selectedEvaluation.suggestedTier || activeOfficial.tier || 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Comments */}
+                    <h3 className='text-fluid-2xl font-semibold text-white heading mb-4'>
+                      Comments
+                    </h3>
+
+                    {/* Group / Crew Comment if any */}
+                    {selectedEvaluation.groupComment && (
+                      <div className='bg-[#2a2a2a] rounded-lg p-4 border border-accent/40 mb-4'>
+                        <div className='text-fluid-lg font-semibold text-accent text-body mb-1'>
+                          Crew / Game Comment
+                        </div>
+                        <div className='text-fluid-base text-white/90 text-body'>
+                          {selectedEvaluation.groupComment}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Official Category Comments */}
+                    <div className='space-y-4 mb-6'>
+                      {typeof activeComments === 'object' && activeComments !== null ? (
+                        Object.entries(activeComments).filter(([key, comment]) => typeof comment === 'string' && comment.trim().length > 0 && !key.startsWith('official_')).length > 0 ? (
+                          Object.entries(activeComments)
+                            .filter(([key, comment]) => typeof comment === 'string' && comment.trim().length > 0 && !key.startsWith('official_'))
+                            .map(([category, comment]) => (
+                              <div
+                                key={category}
+                                className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'
+                              >
+                                <div className='text-fluid-lg font-semibold text-white text-body mb-1 capitalize'>
+                                  {category.replace(/([A-Z])/g, ' $1')}
+                                </div>
+                                <div className='text-fluid-base text-[#9ca3af] text-body'>
+                                  {comment}
+                                </div>
+                              </div>
+                            ))
+                        ) : (
+                          <div className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'>
+                            <p className='text-[#9ca3af] text-fluid-base'>No specific comments provided for {activeOfficial.name}.</p>
+                          </div>
+                        )
+                      ) : (
+                        <div className='bg-[#2a2a2a] rounded-lg p-4 border border-[#3a3a3a]'>
+                          <p className='text-fluid-base text-[#9ca3af] text-body'>
+                            {typeof activeComments === 'string' && activeComments ? activeComments : 'No comments provided.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+            <div className='px-6 pb-6 pt-0 flex gap-3'>
+              <button
+                onClick={handleCloseModal}
+                className='flex-1 bg-[#2a2a2a] hover:bg-[#333333] border border-[#3a3a3a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-lg cursor-pointer'
+              >
+                Close
+              </button>
+              <button
+                onClick={() => router.push(`/admin/evaluations/${selectedEvaluation.id}`)}
+                className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg cursor-pointer'
+              >
+                View Full Details
+              </button>
             </div>
           </div>
         </div>

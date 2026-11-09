@@ -6,18 +6,8 @@ import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import EvaluatorHeader from '../components/EvaluatorHeader';
+import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
 export const dynamic = 'force-dynamic';
-
-const CATEGORY_LIST = [
-  { id: 'positioning', name: 'Positioning & Court Coverage' },
-  { id: 'gameManagement', name: 'Game Management & Control' },
-  { id: 'rulesKnowledge', name: 'Rules Knowledge & Application' },
-  { id: 'mechanics', name: 'Mechanics & Signals' },
-  { id: 'consistency', name: 'Consistency & Accuracy' },
-  { id: 'demeanor', name: 'Professional Demeanor' },
-  { id: 'decisionSpeed', name: 'Decision Making Speed' },
-  { id: 'collaboration', name: 'Team Collaboration' },
-];
 
 const TIER_DATA = [
   { tier: '100', range: [38, 40], desc: 'Eligible for any Varsity game. Highest proficiency in all areas. Referee (R) for all assignments unless with another 100. Eligible for all levels during playoffs.' },
@@ -89,21 +79,26 @@ const EvaluationReviewContent = () => {
   });
 
   // Profile data state
-  const [userData, setUserData] = useState({
-    name: 'John',
-    initials: 'JS',
-  });
-
-  useEffect(() => {
-    const savedProfile = localStorage.getItem('evaluatorProfile');
-    if (savedProfile) {
-      const profile = JSON.parse(savedProfile);
-      setUserData({
-        name: profile.name || 'John',
-        initials: profile.initials || 'JS',
-      });
+  const [userData, setUserData] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedProfile = localStorage.getItem('evaluatorProfile');
+        if (savedProfile) {
+          const profile = JSON.parse(savedProfile);
+          return {
+            name: profile.name || 'John',
+            initials: profile.initials || 'JS',
+          };
+        }
+      } catch {
+        // Fallback to default
+      }
     }
-  }, []);
+    return {
+      name: 'John',
+      initials: 'JS',
+    };
+  });
 
   /* Toggle Category Expansion */
   const toggleCategory = (key) => {

@@ -1,5 +1,6 @@
 import { db } from '@/services/firebase/config';
 import { doc, getDoc, collection, query, where, getDocs, limit, orderBy, startAfter, documentId } from 'firebase/firestore';
+import { getScoresForOfficial, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 /**
  * Fetches a single evaluation by ID with referee and evaluator details (parallelized).
@@ -9,78 +10,102 @@ export const getEvaluationById = async (evaluationId) => {
     const docRef = doc(db, 'evaluations', evaluationId);
     const docSnap = await getDoc(docRef);
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-
-      // Parallelize referee and evaluator fetches
-      const refereePromise = (async () => {
-        let referee = { name: 'Unknown', email: '', tier: '' };
-        if (data.refereeIds && Array.isArray(data.refereeIds)) {
-          if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
-            referee.name = data.refereeNames.length > 2
-              ? `${data.refereeNames.slice(0, 2).join(', ')} +${data.refereeNames.length - 2} more`
-              : data.refereeNames.join(', ');
-          } else if (Array.isArray(data.officials) && data.officials.length > 0) {
-            referee.name = data.officials.length > 2
-              ? `${data.officials.slice(0, 2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
-              : data.officials.map((o) => o.name).join(', ');
-          } else {
-            referee.name = `Group Evaluation (${data.refereeIds.length} Officials)`;
-          }
-          referee.tier = data.tier || '';
-        } else if (data.refereeId) {
-          const refDoc = await getDoc(doc(db, 'users', data.refereeId));
-          if (refDoc.exists()) {
-            const refData = refDoc.data();
-            referee = {
-              name: refData.displayName || refData.name || 'Unknown',
-              email: refData.email || '',
-              tier: refData.tier || '',
-            };
-          }
-        }
-        return referee;
-      })();
-
-      const evaluatorPromise = (async () => {
-        let evaluator = { name: 'Unknown', email: '' };
-        if (data.evaluatorId) {
-          const evalDoc = await getDoc(doc(db, 'users', data.evaluatorId));
-          if (evalDoc.exists()) {
-            const evalData = evalDoc.data();
-            evaluator = {
-              name: evalData.displayName || evalData.name || 'Unknown',
-              email: evalData.email || '',
-            };
-          }
-        }
-        return evaluator;
-      })();
-
-      const [referee, evaluator] = await Promise.all([refereePromise, evaluatorPromise]);
-
-      return {
-        id: docSnap.id,
-        ...data,
-        referee,
-        evaluator,
-        gameDateFormatted: data.gameDate
-          ? new Date(data.gameDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-          : '',
-        gameTimeFormatted: data.gameDate
-          ? new Date(data.gameDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-          : '',
-        location: data.location || 'Unknown Location',
-        date: data.createdAt?.toDate
-          ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-          : '',
-        time: data.createdAt?.toDate
-          ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-          : '',
-      };
-    } else {
+    if (!docSnap.exists()) {
       return null;
     }
+
+    const data = docSnap.data();
+
+    // Check if referee name is already stored directly or in group arrays
+    let refereeName = data.refereeName || null;
+    let refereeTier = data.tier || '';
+    let refereeEmail = '';
+
+    if (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) {
+      refereeName = data.refereeNames.length > 2
+        ? `${data.refereeNames.slice(0, 2).join(', ')} +${data.refereeNames.length - 2} more`
+        : data.refereeNames.join(', ');
+    } else if (Array.isArray(data.officials) && data.officials.length > 0) {
+      refereeName = data.officials.length > 2
+        ? `${data.officials.slice(0, 2).map((o) => o.name).join(', ')} +${data.officials.length - 2} more`
+        : data.officials.map((o) => o.name).join(', ');
+    }
+
+    let evaluatorName = data.evaluatorName || null;
+    let evaluatorEmail = '';
+
+    // Only make Firestore user lookups if names are NOT already stored on the document
+    const promises = [];
+    if (!refereeName && data.refereeId) {
+      promises.push(
+        getDoc(doc(db, 'users', data.refereeId))
+          .then((refDoc) => {
+            if (refDoc.exists()) {
+              const refData = refDoc.data();
+              refereeName = refData.displayName || refData.name || 'Unknown';
+              refereeEmail = refData.email || '';
+              refereeTier = refData.tier || refereeTier;
+            }
+          })
+          .catch((err) => console.warn('Could not fetch referee details:', err))
+      );
+    }
+
+    if (!evaluatorName && data.evaluatorId) {
+      promises.push(
+        getDoc(doc(db, 'users', data.evaluatorId))
+          .then((evalDoc) => {
+            if (evalDoc.exists()) {
+              const evalData = evalDoc.data();
+              evaluatorName = evalData.displayName || evalData.name || 'Unknown';
+              evaluatorEmail = evalData.email || '';
+            }
+          })
+          .catch((err) => console.warn('Could not fetch evaluator details:', err))
+      );
+    }
+
+    if (promises.length > 0) {
+      await Promise.all(promises);
+    }
+
+    const referee = {
+      name: refereeName || (data.refereeIds?.length ? `Group Evaluation (${data.refereeIds.length} Officials)` : 'Unknown'),
+      email: refereeEmail,
+      tier: refereeTier,
+    };
+
+    const evaluator = {
+      name: evaluatorName || 'Unknown',
+      email: evaluatorEmail,
+    };
+
+    let totalScore = data.totalScore ?? data.overallScore ?? data.score;
+    if (totalScore === undefined || totalScore === null || totalScore === 0) {
+      const scores = getScoresForOfficial(data, 0);
+      totalScore = getOfficialTotalScore(scores);
+    }
+
+    return {
+      id: docSnap.id,
+      ...data,
+      totalScore,
+      referee,
+      evaluator,
+      gameDateFormatted: data.gameDate
+        ? new Date(data.gameDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : '',
+      gameTimeFormatted: data.gameDate
+        ? new Date(data.gameDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        : '',
+      location: data.location || 'Unknown Location',
+      date: data.createdAt?.toDate
+        ? data.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''),
+      time: data.createdAt?.toDate
+        ? data.createdAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''),
+    };
   } catch (error) {
     console.error('Error fetching evaluation:', error);
     throw error;
@@ -128,9 +153,16 @@ export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = 50, la
         missingRefereeIds.add(data.refereeId);
       }
 
+      let totalScore = data.totalScore ?? data.overallScore ?? data.score;
+      if (totalScore === undefined || totalScore === null || totalScore === 0) {
+        const scores = getScoresForOfficial(data, 0);
+        totalScore = getOfficialTotalScore(scores);
+      }
+
       return {
         id: docSnap.id,
         ...data,
+        totalScore,
         refereeName: refereeName || 'Unknown',
         maxScore: data.maxScore || 40,
         date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(0),

@@ -1,5 +1,6 @@
 import { db } from '@/services/firebase/config';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, documentId } from 'firebase/firestore';
+import { getScoresForOfficial, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 export const getDashboardData = async (userId) => {
   if (!userId) {
@@ -72,7 +73,13 @@ export const getDashboardData = async (userId) => {
 
     // Calculate Stats
     const totalEvaluations = evaluations.length;
-    const totalScoreSum = evaluations.reduce((sum, ev) => sum + (ev.totalScore || 0), 0);
+    const totalScoreSum = evaluations.reduce((sum, ev) => {
+      let score = ev.totalScore ?? ev.overallScore ?? ev.score;
+      if (score === undefined || score === null || score === 0) {
+        score = getOfficialTotalScore(getScoresForOfficial(ev, 0));
+      }
+      return sum + (score || 0);
+    }, 0);
     const totalMaxScoreSum = evaluations.reduce((sum, ev) => sum + (ev.maxScore || 40), 0);
     // Average Rating (1-5 scale)
     const averageRating = totalMaxScoreSum > 0 ? (totalScoreSum / totalMaxScoreSum * 5).toFixed(1) : 0;
@@ -102,13 +109,18 @@ export const getDashboardData = async (userId) => {
         }
       }
 
+      let score = ev.totalScore ?? ev.overallScore ?? ev.score;
+      if (score === undefined || score === null || score === 0) {
+        score = getOfficialTotalScore(getScoresForOfficial(ev, 0));
+      }
+
       return {
         id: ev.id,
         name,
         date: ev.createdAt?.toDate
           ? ev.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           : '',
-        score: `${ev.totalScore}/${ev.maxScore || 40}`,
+        score: `${score}/${ev.maxScore || 40}`,
         tier,
       };
     });

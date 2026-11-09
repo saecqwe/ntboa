@@ -3,22 +3,13 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { IoMic, IoArrowBack, IoPeople } from 'react-icons/io5';
+import { HiPencil, HiCheck } from 'react-icons/hi';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
 
 export const dynamic = 'force-dynamic';
-
-const CATEGORY_LIST = [
-  { id: 'positioning', name: 'Positioning & Court Coverage' },
-  { id: 'gameManagement', name: 'Game Management & Control' },
-  { id: 'rulesKnowledge', name: 'Rules Knowledge & Application' },
-  { id: 'mechanics', name: 'Mechanics & Signals' },
-  { id: 'consistency', name: 'Consistency & Accuracy' },
-  { id: 'demeanor', name: 'Professional Demeanor' },
-  { id: 'decisionSpeed', name: 'Decision Making Speed' },
-  { id: 'collaboration', name: 'Team Collaboration' },
-];
 
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
 
@@ -101,8 +92,9 @@ const EvaluationFormContent = () => {
 
   // Cleanup recognition instances on unmount
   useEffect(() => {
+    const activeRecognitions = recognitionRef.current;
     return () => {
-      Object.values(recognitionRef.current).forEach((recognition) => {
+      Object.values(activeRecognitions).forEach((recognition) => {
         if (recognition) {
           recognition.stop();
         }
@@ -752,29 +744,55 @@ const EvaluationFormContent = () => {
                         )}
 
                       {/* Comment Display/Edit Area */}
-                      {(activeComment === category.id ||
-                        getCurrentComments()[category.id]) && (
-                          <div className='mt-4'>
-                            {activeComment === category.id ? (
-                              <textarea
-                                value={getCurrentComments()[category.id] || ''}
-                                onChange={(e) =>
-                                  handleCommentChange(category.id, e.target.value)
-                                }
-                                placeholder='Add your comment here...'
-                                className='w-full bg-[#1a1a1a] text-white placeholder-[#6b7280] rounded-[10px] px-3.5 py-2.5 text-[13px] lg:text-[14px] text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] resize-none'
-                                rows={2}
-                                autoFocus
-                              />
-                            ) : (
-                              <div className='bg-[#1a1a1a] rounded-[10px] px-3.5 py-2.5 border border-[#3a3a3a]'>
-                                <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-relaxed'>
-                                  {getCurrentComments()[category.id]}
-                                </div>
-                              </div>
-                            )}
+                      <div className='mt-3.5'>
+                        {activeComment === category.id ? (
+                          <div className='space-y-2'>
+                            <textarea
+                              value={getCurrentComments()[category.id] || ''}
+                              onChange={(e) =>
+                                handleCommentChange(category.id, e.target.value)
+                              }
+                              placeholder='Write your comment here...'
+                              className='w-full bg-[#1a1a1a] text-white placeholder-[#6b7280] rounded-[10px] px-3.5 py-2.5 text-[13px] lg:text-[14px] text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] resize-none'
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className='flex justify-end'>
+                              <button
+                                type='button'
+                                onClick={() => setActiveComment(null)}
+                                className='flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white transition-all cursor-pointer'
+                              >
+                                <HiCheck className='w-3.5 h-3.5 text-green-400' />
+                                <span>Done</span>
+                              </button>
+                            </div>
                           </div>
+                        ) : getCurrentComments()[category.id] ? (
+                          <div
+                            onClick={() => setActiveComment(category.id)}
+                            className='bg-[#1a1a1a] hover:bg-[#202020] rounded-[10px] px-3.5 py-2.5 border border-[#3a3a3a] hover:border-accent/60 transition-all cursor-pointer group flex items-start justify-between gap-3'
+                            title='Click to edit comment'
+                          >
+                            <div className='text-[13px] lg:text-[14px] text-white/90 text-body leading-relaxed flex-1'>
+                              {getCurrentComments()[category.id]}
+                            </div>
+                            <div className='flex items-center gap-1 text-xs text-accent shrink-0 pt-0.5 group-hover:underline'>
+                              <HiPencil className='w-3.5 h-3.5' />
+                              <span>Edit</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type='button'
+                            onClick={() => setActiveComment(category.id)}
+                            className='flex items-center gap-1.5 text-xs text-[#9ca3af] hover:text-white transition-colors cursor-pointer py-1 px-1 rounded hover:bg-white/5'
+                          >
+                            <HiPencil className='w-3.5 h-3.5 text-accent' />
+                            <span>Write something here...</span>
+                          </button>
                         )}
+                      </div>
                     </div>
                   ))}
                 </div>

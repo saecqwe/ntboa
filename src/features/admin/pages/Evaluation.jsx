@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
@@ -10,48 +10,20 @@ import { HiMenu, HiArrowLeft, HiPencil, HiCheck, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 
+import {
+  OFFICIAL_CATEGORIES,
+  LEGACY_CATEGORIES,
+  getCategoryScore,
+  getEvaluationOfficials,
+  getScoresForOfficial,
+  getCommentsForOfficial,
+  getOfficialTotalScore,
+  getScoreColor,
+  getScoreBackground,
+} from '@/lib/evaluationUtils';
+
 // Module-level cache across tab navigations
 const globalEvaluationDetailCache = new Map();
-
-const OFFICIAL_CATEGORIES = [
-  { label: 'Positioning & Court Coverage', key: 'positioning', max: 5 },
-  { label: 'Game Management & Control', key: 'gameManagement', max: 5 },
-  { label: 'Rules Knowledge & Application', key: 'rulesKnowledge', max: 5 },
-  { label: 'Mechanics & Signals', key: 'mechanics', max: 5 },
-  { label: 'Consistency & Accuracy', key: 'consistency', max: 5 },
-  { label: 'Professional Demeanor', key: 'demeanor', max: 5 },
-  { label: 'Decision Making Speed', key: 'decisionSpeed', max: 5 },
-  { label: 'Team Collaboration', key: 'collaboration', max: 5 },
-];
-
-const LEGACY_CATEGORIES = [
-  { label: 'Court Presence', key: 'courtPresence', max: 5 },
-  { label: 'Communication', key: 'communication', max: 5 },
-  { label: 'Game Management', key: 'gameManagement', max: 5 },
-  { label: 'Rules Knowledge', key: 'rulesKnowledge', max: 5 },
-  { label: 'Physical Fitness', key: 'physicalFitness', max: 5 },
-  { label: 'Professionalism', key: 'professionalism', max: 5 },
-];
-
-// Helper to extract score for a category, checking common key aliases
-const getCategoryScore = (scores, key) => {
-  if (!scores) return 0;
-  if (typeof scores[key] === 'number') return scores[key];
-  const aliases = {
-    demeanor: 'professionalism',
-    professionalism: 'demeanor',
-    collaboration: 'communication',
-    communication: 'collaboration',
-    positioning: 'courtPresence',
-    courtPresence: 'positioning',
-    mechanics: 'physicalFitness',
-    physicalFitness: 'mechanics',
-  };
-  if (aliases[key] && typeof scores[aliases[key]] === 'number') {
-    return scores[aliases[key]];
-  }
-  return 0;
-};
 
 const EvaluationDetailPage = () => {
   const router = useRouter();
@@ -63,6 +35,7 @@ const EvaluationDetailPage = () => {
   const [loading, setLoading] = useState(() => !cachedData);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => cachedData?.editForm || null);
+  const [activeOfficialIndex, setActiveOfficialIndex] = useState(0);
 
   useEffect(() => {
     const fetchEvaluation = async () => {
@@ -72,7 +45,7 @@ const EvaluationDetailPage = () => {
         if (evalDoc.exists()) {
           const evalData = evalDoc.data();
 
-          // Parallelize fetching referee and evaluator docs to eliminate client waterfall
+          // Parallelize fetching referee and evaluator docs
           const refereePromise = evalData.refereeId ? getDoc(doc(db, 'users', evalData.refereeId)) : Promise.resolve(null);
           const evaluatorPromise = evalData.evaluatorId ? getDoc(doc(db, 'users', evalData.evaluatorId)) : Promise.resolve(null);
 
@@ -80,23 +53,24 @@ const EvaluationDetailPage = () => {
           const refereeData = refereeDoc && refereeDoc.exists() ? refereeDoc.data() : null;
           const evaluatorData = evaluatorDoc && evaluatorDoc.exists() ? evaluatorDoc.data() : null;
 
-          // Normalize scores & ratings (unwrapping official_0 or official if nested)
-          let rawScores = evalData.scores || evalData.ratings || {};
-          if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
-            rawScores = rawScores.official_0;
-          } else if (rawScores.official && typeof rawScores.official === 'object') {
-            rawScores = rawScores.official;
+          const rawScores = evalData.scores || evalData.ratings || {};
+          const rawComments = evalData.comments || {};
+
+          // Initial unwrap for official 0
+          let initialScores = rawScores;
+          if (initialScores.official_0 && typeof initialScores.official_0 === 'object') {
+            initialScores = initialScores.official_0;
+          } else if (initialScores.official && typeof initialScores.official === 'object') {
+            initialScores = initialScores.official;
           }
 
-          // Normalize comments (unwrapping official_0 if nested)
-          let rawComments = evalData.comments || {};
-          if (rawComments.official_0 && typeof rawComments.official_0 === 'object') {
-            rawComments = rawComments.official_0;
+          let initialComments = rawComments;
+          if (initialComments.official_0 && typeof initialComments.official_0 === 'object') {
+            initialComments = initialComments.official_0;
           }
 
-          // Calculate total score if missing or zero
           let totalScore = evalData.totalScore ?? evalData.overallScore ?? evalData.score;
-          const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
+          const scoreValues = Object.values(initialScores).filter(v => typeof v === 'number');
           if ((totalScore === undefined || totalScore === null || totalScore === 0) && scoreValues.length > 0) {
             totalScore = scoreValues.reduce((a, b) => a + b, 0);
           }
@@ -109,6 +83,8 @@ const EvaluationDetailPage = () => {
           const formattedEvaluation = {
             id: evalDoc.id,
             ...evalData,
+            rawScores,
+            rawComments,
             date: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', {
               year: 'numeric',
               month: 'long',
@@ -129,18 +105,18 @@ const EvaluationDetailPage = () => {
               name: evaluatorData?.displayName || evalData.evaluatorName || 'Unknown',
               email: evaluatorData?.email || 'N/A',
             },
-            scores: rawScores,
+            scores: initialScores,
             totalScore,
             maxScore,
             tierAssigned: evalData.tier || refereeData?.tier || 'N/A',
-            comments: rawComments,
+            comments: initialComments,
             recommendations: evalData.recommendations || evalData.feedback || evalData.groupComment || 'None provided.',
             submittedAt: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toISOString() : null,
           };
 
           const initialEditForm = {
-            scores: { ...rawScores },
-            comments: rawComments,
+            scores: { ...initialScores },
+            comments: initialComments,
             recommendations: evalData.recommendations || evalData.feedback || evalData.groupComment || '',
             tierAssigned: evalData.tier || refereeData?.tier || 'N/A',
           };
@@ -163,43 +139,55 @@ const EvaluationDetailPage = () => {
     fetchEvaluation();
   }, [params.id]);
 
-  const activeCategories = React.useMemo(() => {
-    if (!evaluation?.scores) return OFFICIAL_CATEGORIES;
-    const keys = Object.keys(evaluation.scores);
+  const officialsList = useMemo(() => {
+    return getEvaluationOfficials(evaluation);
+  }, [evaluation]);
+
+  const activeOfficial = officialsList[activeOfficialIndex] || officialsList[0] || {
+    name: evaluation?.referee?.name || 'Official',
+    tier: evaluation?.tierAssigned || 'N/A',
+  };
+
+  const activeScores = useMemo(() => {
+    return getScoresForOfficial(evaluation, activeOfficial.index ?? activeOfficialIndex);
+  }, [evaluation, activeOfficial.index, activeOfficialIndex]);
+
+  const activeComments = useMemo(() => {
+    return getCommentsForOfficial(evaluation, activeOfficial.index ?? activeOfficialIndex);
+  }, [evaluation, activeOfficial.index, activeOfficialIndex]);
+
+  const calculatedTotal = getOfficialTotalScore(activeScores);
+  const activeTotalScore = calculatedTotal || evaluation?.totalScore || 0;
+
+  const activeCategories = useMemo(() => {
+    const scoresToCheck = isEditing ? editForm?.scores : activeScores;
+    if (!scoresToCheck) return OFFICIAL_CATEGORIES;
+    const keys = Object.keys(scoresToCheck);
     const hasOfficial = OFFICIAL_CATEGORIES.some(c => keys.includes(c.key));
     if (hasOfficial) return OFFICIAL_CATEGORIES;
     const hasLegacy = LEGACY_CATEGORIES.some(c => keys.includes(c.key));
     if (hasLegacy) return LEGACY_CATEGORIES;
     return OFFICIAL_CATEGORIES;
-  }, [evaluation?.scores]);
-
-  const getScoreColor = (score, max) => {
-    const percentage = (score / max) * 100;
-    if (percentage >= 85) return 'text-green-500';
-    if (percentage >= 70) return 'text-yellow-500';
-    return 'text-red-500';
-  };
-
-  const getScoreBackground = (score, max) => {
-    const percentage = (score / max) * 100;
-    if (percentage >= 85) return 'bg-green-500/10';
-    if (percentage >= 70) return 'bg-yellow-500/10';
-    return 'bg-red-500/10';
-  };
-
+  }, [isEditing, editForm?.scores, activeScores]);
 
 
   const handleEditToggle = () => {
     if (isEditing) {
-      // Create a reset
+      // Reset editForm to currently active official
       setEditForm({
-        scores: evaluation.scores,
-        comments: evaluation.comments,
+        scores: { ...activeScores },
+        comments: activeComments,
         recommendations: evaluation.recommendations,
-        tierAssigned: evaluation.tierAssigned,
+        tierAssigned: activeOfficial.tier || evaluation.tierAssigned,
       });
       setIsEditing(false);
     } else {
+      setEditForm({
+        scores: { ...activeScores },
+        comments: activeComments,
+        recommendations: evaluation.recommendations,
+        tierAssigned: activeOfficial.tier || evaluation.tierAssigned,
+      });
       setIsEditing(true);
     }
   };
@@ -220,25 +208,42 @@ const EvaluationDetailPage = () => {
       ...prev,
       [field]: value
     }));
-  }
+  };
 
   const handleSaveChanges = async () => {
     try {
-      const newTotalScore = Object.values(editForm.scores).reduce((a, b) => a + b, 0);
+      const newTotalScore = Object.values(editForm.scores).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
       const evalRef = doc(db, 'evaluations', params.id);
 
+      const isGroup = evaluation.rawScores && (evaluation.rawScores.official_0 || evaluation.officials);
+      let updatedScoresPayload = editForm.scores;
+      let updatedCommentsPayload = editForm.comments;
+
+      if (isGroup) {
+        const offKey = `official_${activeOfficialIndex}`;
+        updatedScoresPayload = {
+          ...(typeof evaluation.rawScores === 'object' ? evaluation.rawScores : {}),
+          [offKey]: editForm.scores,
+        };
+        updatedCommentsPayload = {
+          ...(typeof evaluation.rawComments === 'object' ? evaluation.rawComments : {}),
+          [offKey]: editForm.comments,
+        };
+      }
+
       await updateDoc(evalRef, {
-        scores: editForm.scores,
+        scores: updatedScoresPayload,
         totalScore: newTotalScore,
-        comments: editForm.comments,
-        recommendations: editForm.recommendations, // or feedback
+        comments: updatedCommentsPayload,
+        recommendations: editForm.recommendations,
         tier: editForm.tierAssigned,
       });
 
-      // Sync tier to referee profile (Master Roster update)
-      if (evaluation.refereeId) {
+      // Sync tier to referee profile if single evaluation or primary official
+      const refId = activeOfficial.id && !activeOfficial.id.startsWith('official_') ? activeOfficial.id : evaluation.refereeId;
+      if (refId) {
         try {
-          const refereeRef = doc(db, 'users', evaluation.refereeId);
+          const refereeRef = doc(db, 'users', refId);
           await updateDoc(refereeRef, {
             suggestedTier: editForm.tierAssigned
           });
@@ -249,9 +254,10 @@ const EvaluationDetailPage = () => {
 
       toast.success("Evaluation updated successfully!");
 
-      // Update local state and cache
       const updatedEval = {
         ...evaluation,
+        rawScores: updatedScoresPayload,
+        rawComments: updatedCommentsPayload,
         scores: editForm.scores,
         totalScore: newTotalScore,
         comments: editForm.comments,
@@ -317,14 +323,14 @@ const EvaluationDetailPage = () => {
               <>
                 <button
                   onClick={handleEditToggle}
-                  className='flex items-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg font-semibold transition-all'
+                  className='flex items-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg font-semibold transition-all cursor-pointer'
                 >
                   <HiX className='w-5 h-5' />
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveChanges}
-                  className='flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-all'
+                  className='flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-all cursor-pointer'
                 >
                   <HiCheck className='w-5 h-5' />
                   Save
@@ -333,24 +339,67 @@ const EvaluationDetailPage = () => {
             ) : (
               <button
                 onClick={handleEditToggle}
-                className='flex items-center gap-2 bg-accent hover:opacity-90 text-white px-4 py-2 rounded-lg font-semibold transition-all'
+                className='flex items-center gap-2 bg-accent hover:opacity-90 text-white px-4 py-2 rounded-lg font-semibold transition-all cursor-pointer'
               >
                 <HiPencil className='w-5 h-5' />
                 Edit Evaluation
               </button>
             )}
-
           </div>
         </header>
 
         {/* Content */}
         <div className='p-4 lg:p-8'>
           <div className='max-w-7xl mx-auto space-y-6'>
+            {/* Group Evaluation Tabs Switcher */}
+            {officialsList.length > 1 && (
+              <div className='bg-[#242424] p-4 rounded-[20px] border border-[#3a3a3a]'>
+                <div className='text-xs text-[#9ca3af] font-semibold uppercase tracking-wider mb-2.5'>
+                  Officials in Group Evaluation ({officialsList.length}):
+                </div>
+                <div className='flex items-center gap-2 overflow-x-auto pb-1'>
+                  {officialsList.map((off, idx) => (
+                    <button
+                      key={off.id || idx}
+                      type='button'
+                      onClick={() => {
+                        setActiveOfficialIndex(idx);
+                        if (isEditing) {
+                          const offScores = getScoresForOfficial(evaluation, idx);
+                          const offComments = getCommentsForOfficial(evaluation, idx);
+                          setEditForm(prev => ({
+                            ...prev,
+                            scores: { ...offScores },
+                            comments: offComments,
+                            tierAssigned: off.tier || evaluation.tierAssigned || 'N/A',
+                          }));
+                        }
+                      }}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                        activeOfficialIndex === idx
+                          ? 'bg-accent text-white shadow-md'
+                          : 'bg-[#1a1a1a] text-[#9ca3af] hover:text-white hover:bg-[#2e2e2e]'
+                      }`}
+                    >
+                      {off.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Evaluation Overview */}
             <div className='bg-accent rounded-[20px] px-6 py-6'>
-              <h2 className='text-fluid-2xl font-bold text-white heading mb-4'>
-                Evaluation #{evaluation.id}
-              </h2>
+              <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4'>
+                <h2 className='text-fluid-2xl font-bold text-white heading'>
+                  Evaluation #{evaluation.id}
+                </h2>
+                {officialsList.length > 1 && (
+                  <span className='inline-block self-start sm:self-auto bg-black/20 text-white/90 px-3 py-1 rounded-full text-xs font-semibold'>
+                    Viewing: {activeOfficial.name} (Official {activeOfficialIndex + 1} of {officialsList.length})
+                  </span>
+                )}
+              </div>
               <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-white/90'>
                 <div>
                   <div className='text-sm text-white/70'>Date & Time</div>
@@ -368,7 +417,9 @@ const EvaluationDetailPage = () => {
                 <div>
                   <div className='text-sm text-white/70'>Total Score</div>
                   <div className='font-bold text-2xl'>
-                    {evaluation.totalScore}/{evaluation.maxScore}
+                    {isEditing
+                      ? Object.values(editForm.scores || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
+                      : activeTotalScore}/{evaluation.maxScore || (activeCategories.length * 5)}
                   </div>
                 </div>
               </div>
@@ -385,7 +436,7 @@ const EvaluationDetailPage = () => {
                   <div>
                     <div className='text-sm text-[#9ca3af]'>Name</div>
                     <div className='text-white font-semibold'>
-                      {evaluation.referee.name}
+                      {activeOfficial.name || evaluation.referee.name}
                     </div>
                   </div>
                   <div>
@@ -395,7 +446,7 @@ const EvaluationDetailPage = () => {
                   <div>
                     <div className='text-sm text-[#9ca3af]'>Current Tier</div>
                     <span className='inline-block px-3 py-1 rounded-full text-sm font-semibold bg-[#e5e7eb] text-[#374151]'>
-                      {evaluation.referee.tier}
+                      {activeOfficial.tier || evaluation.referee.tier}
                     </span>
                   </div>
                 </div>
@@ -438,7 +489,7 @@ const EvaluationDetailPage = () => {
                 {activeCategories.map((category) => {
                   const score = isEditing
                     ? (editForm.scores?.[category.key] ?? getCategoryScore(editForm.scores, category.key))
-                    : getCategoryScore(evaluation.scores, category.key);
+                    : getCategoryScore(activeScores, category.key);
 
                   return (
                     <div
@@ -449,7 +500,6 @@ const EvaluationDetailPage = () => {
                         <div className='text-white font-medium'>
                           {category.label}
                         </div>
-
                         {isEditing ? (
                           <input
                             type="number"
@@ -457,15 +507,10 @@ const EvaluationDetailPage = () => {
                             max="5"
                             value={score}
                             onChange={(e) => handleScoreChange(category.key, e.target.value)}
-                            className="w-16 bg-[#1a1a1a] border border-[#4a4a4a] rounded px-2 py-1 text-white text-right focus:outline-none focus:border-accent"
+                            className="w-16 bg-[#1a1a1a] border border-[#4a4a4a] text-white text-center rounded p-1"
                           />
                         ) : (
-                          <div
-                            className={`font-bold text-lg ${getScoreColor(
-                              score,
-                              category.max
-                            )}`}
-                          >
+                          <div className={`font-bold ${getScoreColor(score, category.max)}`}>
                             {score}/{category.max}
                           </div>
                         )}
@@ -492,12 +537,24 @@ const EvaluationDetailPage = () => {
               </div>
             </div>
 
+            {/* Crew / Game Comment (if group evaluation) */}
+            {evaluation.groupComment && (
+              <div className='bg-[#2a2a2a] rounded-[20px] p-6 border border-accent/40'>
+                <h3 className='text-fluid-xl font-semibold text-accent mb-2'>
+                  Crew / Game Comment
+                </h3>
+                <p className='text-white/90 leading-relaxed text-fluid-base'>
+                  {evaluation.groupComment}
+                </p>
+              </div>
+            )}
+
             {/* Comments & Recommendations */}
             <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
               {/* Comments */}
               <div className='bg-[#2a2a2a] rounded-[20px] p-6 border border-[#3a3a3a]'>
                 <h3 className='text-fluid-xl font-semibold text-white mb-4'>
-                  Comments
+                  Category Comments ({activeOfficial.name})
                 </h3>
                 {isEditing ? (
                   <textarea
@@ -507,23 +564,25 @@ const EvaluationDetailPage = () => {
                     placeholder="Enter comments..."
                   />
                 ) : (
-                  typeof evaluation.comments === 'object' && evaluation.comments !== null ? (
+                  typeof activeComments === 'object' && activeComments !== null ? (
                     <div className='space-y-4'>
-                      {Object.entries(evaluation.comments)
-                        .filter(([_, c]) => c && typeof c === 'string' && c.trim().length > 0)
+                      {Object.entries(activeComments)
+                        .filter(([k, c]) => c && typeof c === 'string' && c.trim().length > 0 && !k.startsWith('official_'))
                         .map(([category, comment]) => (
-                        <div key={category}>
-                          <div className='text-sm text-[#9ca3af] capitalize mb-1'>{category.replace(/([A-Z])/g, ' $1')}</div>
-                          <p className='text-white/90 leading-relaxed'>{comment}</p>
+                        <div key={category} className='bg-[#242424] p-3.5 rounded-xl border border-[#3a3a3a]'>
+                          <div className='text-sm text-accent font-semibold capitalize mb-1'>
+                            {category.replace(/([A-Z])/g, ' $1')}
+                          </div>
+                          <p className='text-white/90 text-sm leading-relaxed'>{comment}</p>
                         </div>
                       ))}
-                      {Object.values(evaluation.comments).filter(c => c && typeof c === 'string' && c.trim().length > 0).length === 0 && (
-                        <p className='text-white/90 leading-relaxed'>No comments provided.</p>
+                      {Object.entries(activeComments).filter(([k, c]) => c && typeof c === 'string' && c.trim().length > 0 && !k.startsWith('official_')).length === 0 && (
+                        <p className='text-[#9ca3af] leading-relaxed'>No specific comments provided for {activeOfficial.name}.</p>
                       )}
                     </div>
                   ) : (
                     <p className='text-white/90 leading-relaxed'>
-                      {evaluation.comments || 'No comments provided.'}
+                      {typeof activeComments === 'string' && activeComments ? activeComments : 'No comments provided.'}
                     </p>
                   )
                 )}
@@ -569,13 +628,13 @@ const EvaluationDetailPage = () => {
                   </select>
                 ) : (
                   <span className='inline-block px-4 py-2 rounded-full text-lg font-semibold bg-[#e5e7eb] text-[#374151]'>
-                    {evaluation.tierAssigned}
+                    {activeOfficial.tier || evaluation.tierAssigned}
                   </span>
                 )}
 
                 <div className='text-sm text-[#9ca3af]'>
-                  Based on total score of {isEditing ? Object.values(editForm.scores).reduce((a, b) => a + b, 0) : evaluation.totalScore}/
-                  {evaluation.maxScore}
+                  Based on total score of {isEditing ? Object.values(editForm.scores || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) : activeTotalScore}/
+                  {evaluation.maxScore || (activeCategories.length * 5)}
                 </div>
               </div>
             </div>
@@ -583,7 +642,7 @@ const EvaluationDetailPage = () => {
             {/* Back Button */}
             <button
               onClick={() => router.back()}
-              className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body'
+              className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body cursor-pointer'
             >
               <HiArrowLeft className='w-5 h-5' />
               Back to Previous Page

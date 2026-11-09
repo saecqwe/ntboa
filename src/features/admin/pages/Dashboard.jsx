@@ -11,6 +11,12 @@ import { HiOutlineUsers, HiOutlineDocumentText, HiMenu, HiOutlineSearch } from '
 import { HiStar } from 'react-icons/hi2';
 import { FaTrophy } from 'react-icons/fa';
 import {
+  getScoresForOfficial,
+  getScoresForReferee,
+  getOfficialTotalScore,
+  getEvaluationOfficials,
+} from '@/lib/evaluationUtils';
+import {
   LineChart,
   Line,
   XAxis,
@@ -80,18 +86,10 @@ const AdminDashboardPage = () => {
           const evaluator = data.evaluatorId ? userMap[data.evaluatorId] : null;
 
           // Normalize scores and calculate total if missing or zero
+          const off0Scores = getScoresForOfficial(data, 0);
           let totalScore = data.totalScore ?? data.overallScore ?? data.score;
           if (totalScore === undefined || totalScore === null || totalScore === 0) {
-            let rawScores = data.scores || data.ratings || {};
-            if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
-              rawScores = rawScores.official_0;
-            }
-            const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
-            if (scoreValues.length > 0) {
-              totalScore = scoreValues.reduce((a, b) => a + b, 0);
-            } else {
-              totalScore = 0;
-            }
+            totalScore = getOfficialTotalScore(off0Scores);
           }
 
           return {
@@ -111,14 +109,26 @@ const AdminDashboardPage = () => {
         const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
         const averageScore = evaluationsCount > 0 ? (totalScore / evaluationsCount).toFixed(1) : '0.0';
 
-        // Calculate Top Tier Officials (Dynamic)
+        // Calculate Top Tier Officials (Dynamic, includes group evaluations)
         const refStats = {};
         evaluationsData.forEach(ev => {
-          const rId = ev.refereeId;
-          if (!rId) return;
-          if (!refStats[rId]) refStats[rId] = { total: 0, count: 0, name: ev.refereeName };
-          refStats[rId].total += (ev.totalScore || 0);
-          refStats[rId].count += 1;
+          const officials = getEvaluationOfficials(ev);
+          officials.forEach(off => {
+            const rId = off.id;
+            if (!rId || rId.startsWith('official_')) {
+              if (ev.refereeId) {
+                const id = ev.refereeId;
+                if (!refStats[id]) refStats[id] = { total: 0, count: 0, name: ev.refereeName };
+                refStats[id].total += (ev.totalScore || 0);
+                refStats[id].count += 1;
+              }
+              return;
+            }
+            if (!refStats[rId]) refStats[rId] = { total: 0, count: 0, name: off.name };
+            const score = getOfficialTotalScore(getScoresForReferee(ev, rId)) || ev.totalScore || 0;
+            refStats[rId].total += score;
+            refStats[rId].count += 1;
+          });
         });
 
         const topReferees = Object.values(refStats)
