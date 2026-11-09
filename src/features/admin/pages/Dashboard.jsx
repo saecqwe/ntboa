@@ -50,18 +50,20 @@ const AdminDashboardPage = () => {
   const [loading, setLoading] = useState(() => !globalDashboardCache.loaded);
 
   useEffect(() => {
-    // Render immediately from cache on subsequent visits
-    if (globalDashboardCache.loaded) {
-      setAllEvaluations(globalDashboardCache.allEvaluations);
-      setChartData(globalDashboardCache.chartData);
-      setStats(globalDashboardCache.stats);
-      setLoading(false);
-    }
-
     const fetchData = async () => {
       try {
-        // 1. Fetch All Users to build a lookup map
-        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const evaluationsQuery = query(
+          collection(db, 'evaluations'),
+          orderBy('createdAt', 'desc'),
+          limit(500)
+        );
+
+        // Fetch Users and Evaluations in parallel
+        const [usersSnapshot, evaluationsSnapshot] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(evaluationsQuery)
+        ]);
+
         const userMap = {};
         const referees = [];
         usersSnapshot.forEach((docSnap) => {
@@ -71,24 +73,34 @@ const AdminDashboardPage = () => {
         });
         const refereesCount = referees.length;
 
-        // 2. Fetch evaluations (capped at 500 to avoid unbounded scans)
-        const evaluationsQuery = query(
-          collection(db, 'evaluations'),
-          orderBy('createdAt', 'desc'),
-          limit(500)
-        );
-        const evaluationsSnapshot = await getDocs(evaluationsQuery);
+        const evaluationsData = evaluationsSnapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const rId = data.refereeId || (Array.isArray(data.refereeIds) ? data.refereeIds[0] : null);
+          const referee = rId ? userMap[rId] : null;
+          const evaluator = data.evaluatorId ? userMap[data.evaluatorId] : null;
 
-        const evaluationsData = evaluationsSnapshot.docs.map((doc) => {
-          const data = doc.data();
-          const referee = userMap[data.refereeId];
-          const evaluator = userMap[data.evaluatorId];
+          // Normalize scores and calculate total if missing or zero
+          let totalScore = data.totalScore ?? data.overallScore ?? data.score;
+          if (totalScore === undefined || totalScore === null || totalScore === 0) {
+            let rawScores = data.scores || data.ratings || {};
+            if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
+              rawScores = rawScores.official_0;
+            }
+            const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
+            if (scoreValues.length > 0) {
+              totalScore = scoreValues.reduce((a, b) => a + b, 0);
+            } else {
+              totalScore = 0;
+            }
+          }
+
           return {
-            id: doc.id,
+            id: docSnap.id,
             ...data,
-            refereeName: referee?.displayName || 'Unknown',
-            evaluatorName: evaluator?.displayName || 'Unknown',
-            tier: referee?.tier || 'N/A',
+            totalScore,
+            refereeName: referee?.displayName || data.refereeName || (Array.isArray(data.refereeNames) ? data.refereeNames[0] : 'Unknown'),
+            evaluatorName: evaluator?.displayName || data.evaluatorName || 'Unknown',
+            tier: referee?.tier || data.tier || 'N/A',
             createdAtDate: data.createdAt ? new Date(data.createdAt.seconds * 1000) : new Date(),
           };
         });

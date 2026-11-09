@@ -39,12 +39,6 @@ const RefereesPage = () => {
   const unsubscribeRef = useRef(null);
 
   useEffect(() => {
-    // Render from cache immediately on tab revisit
-    if (globalRefereesCache.loaded) {
-      setReferees(globalRefereesCache.referees);
-      setLoading(false);
-    }
-
     // Step 1: Set up real-time listener for referees FIRST — shows the list immediately
     const q = query(collection(db, 'users'), where('role', '==', 'referee'));
     

@@ -107,29 +107,25 @@ const EvaluationsPage = () => {
   }).reverse();
 
   useEffect(() => {
-    // Render from cache immediately on tab revisit
-    if (globalEvaluationsCache.loaded) {
-      setEvaluations(globalEvaluationsCache.evaluations);
-      setStats(globalEvaluationsCache.stats);
-      setLoading(false);
-    }
-
     const fetchData = async () => {
       try {
-        // 1. Fetch all users once into a lookup map to avoid N+1 queries and missing docs
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const userMap = {};
-        usersSnapshot.forEach((uDoc) => {
-          userMap[uDoc.id] = uDoc.data();
-        });
-
-        // 2. Fetch evaluations sorted by creation date with limit
         const evaluationsQuery = query(
           collection(db, 'evaluations'),
           orderBy('createdAt', 'desc'),
           limit(100)
         );
-        const evaluationsSnapshot = await getDocs(evaluationsQuery);
+
+        // Fetch all users and evaluations in parallel
+        const [usersSnapshot, evaluationsSnapshot] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(evaluationsQuery)
+        ]);
+
+        const userMap = {};
+        usersSnapshot.forEach((uDoc) => {
+          userMap[uDoc.id] = uDoc.data();
+        });
+
         const evaluationsData = evaluationsSnapshot.docs.map((evalDoc) => {
           const evaluation = evalDoc.data();
           const rId = evaluation.refereeId || (Array.isArray(evaluation.refereeIds) ? evaluation.refereeIds[0] : null);
@@ -140,9 +136,25 @@ const EvaluationsPage = () => {
           const evalName = evaluator?.displayName || evaluation.evaluatorName || 'Unknown';
           const tier = referee?.tier || evaluation.tier || 'N/A';
 
+          // Normalize scores and calculate total if missing or zero
+          let totalScore = evaluation.totalScore ?? evaluation.overallScore ?? evaluation.score;
+          if (totalScore === undefined || totalScore === null || totalScore === 0) {
+            let rawScores = evaluation.scores || evaluation.ratings || {};
+            if (rawScores.official_0 && typeof rawScores.official_0 === 'object') {
+              rawScores = rawScores.official_0;
+            }
+            const scoreValues = Object.values(rawScores).filter(v => typeof v === 'number');
+            if (scoreValues.length > 0) {
+              totalScore = scoreValues.reduce((a, b) => a + b, 0);
+            } else {
+              totalScore = 0;
+            }
+          }
+
           return {
             id: evalDoc.id,
             ...evaluation,
+            totalScore,
             refereeName: refName,
             evaluatorName: evalName,
             tier: tier,
