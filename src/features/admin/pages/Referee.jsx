@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { doc, getDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiMenu, HiArrowLeft } from 'react-icons/hi';
+import { HiMenu, HiArrowLeft, HiChevronUp, HiChevronDown, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
@@ -22,6 +22,7 @@ const RefereeDetailPage = () => {
   const [referee, setReferee] = useState(() => cachedData?.referee || null);
   const [evaluations, setEvaluations] = useState(() => cachedData?.evaluations || []);
   const [loading, setLoading] = useState(() => !cachedData);
+  const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
   useEffect(() => {
     const fetchRefereeData = async () => {
@@ -138,6 +139,84 @@ const RefereeDetailPage = () => {
   const avgScoreCalculated = evaluations.length > 0
     ? (totalScoreFromEvals / evaluations.length).toFixed(1)
     : (referee?.avgScore || 0);
+
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key,
+        direction: 'asc',
+      };
+    });
+  };
+
+  const renderSortIcon = (columnKey) => {
+    if (sortConfig.key === columnKey) {
+      return sortConfig.direction === 'asc' ? (
+        <HiChevronUp className='w-3.5 h-3.5 text-white inline-block transition-transform shrink-0' />
+      ) : (
+        <HiChevronDown className='w-3.5 h-3.5 text-white inline-block transition-transform shrink-0' />
+      );
+    }
+    return (
+      <HiSelector className='w-3.5 h-3.5 text-[#9ca3af]/60 group-hover:text-white inline-block transition-colors shrink-0' />
+    );
+  };
+
+  const sortedEvaluations = useMemo(() => {
+    const list = [...evaluations];
+    if (!sortConfig.key) return list;
+
+    const { key, direction } = sortConfig;
+    const factor = direction === 'asc' ? 1 : -1;
+
+    const parseTierNumber = (tier) => {
+      if (!tier) return -1;
+      const num = parseInt(String(tier).replace(/\D/g, ''), 10);
+      return isNaN(num) ? -1 : num;
+    };
+
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (key) {
+        case 'date': {
+          const timeA = a.timestamp || 0;
+          const timeB = b.timestamp || 0;
+          comparison = timeA - timeB;
+          break;
+        }
+        case 'evaluatorName':
+          comparison = (a.evaluatorName || '').localeCompare(b.evaluatorName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'totalScore': {
+          const scoreA = Number(a.totalScore) || 0;
+          const scoreB = Number(b.totalScore) || 0;
+          comparison = scoreA - scoreB;
+          break;
+        }
+        case 'tier': {
+          const tierA = parseTierNumber(a.tier);
+          const tierB = parseTierNumber(b.tier);
+          if (tierA !== tierB) {
+            comparison = tierA - tierB;
+          } else {
+            comparison = (a.tier || '').localeCompare(b.tier || '');
+          }
+          break;
+        }
+        default:
+          comparison = 0;
+      }
+
+      return comparison * factor;
+    });
+  }, [evaluations, sortConfig]);
 
   // Stats configuration
   const stats = [
@@ -293,17 +372,45 @@ const RefereeDetailPage = () => {
                 <table className='w-full'>
                   <thead>
                     <tr className='border-b border-[#3a3a3a]'>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                        DATE
+                      <th
+                        onClick={() => handleSort('date')}
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
+                        title='Sort by Date'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>DATE</span>
+                          {renderSortIcon('date')}
+                        </div>
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                        EVALUATOR NAME
+                      <th
+                        onClick={() => handleSort('evaluatorName')}
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
+                        title='Sort by Evaluator Name'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>EVALUATOR NAME</span>
+                          {renderSortIcon('evaluatorName')}
+                        </div>
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                        TOTAL SCORE
+                      <th
+                        onClick={() => handleSort('totalScore')}
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
+                        title='Sort by Total Score'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>TOTAL SCORE</span>
+                          {renderSortIcon('totalScore')}
+                        </div>
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
-                        TIER ASSIGNED
+                      <th
+                        onClick={() => handleSort('tier')}
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
+                        title='Sort by Tier Assigned'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>TIER ASSIGNED</span>
+                          {renderSortIcon('tier')}
+                        </div>
                       </th>
                       <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
                         COMMENT
@@ -314,8 +421,8 @@ const RefereeDetailPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {evaluations.length > 0 ? (
-                        evaluations.map((evaluation) => (
+                    {sortedEvaluations.length > 0 ? (
+                        sortedEvaluations.map((evaluation) => (
                         <tr
                             key={evaluation.id}
                             className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'

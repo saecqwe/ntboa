@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, functions } from '@/services/firebase/config';
@@ -8,7 +8,7 @@ import { httpsCallable } from 'firebase/functions';
 import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronDown, HiCheck } from 'react-icons/hi';
+import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronDown, HiCheck, HiChevronUp, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import TableRowSkeleton from '@/ui/skeletons/TableRowSkeleton';
 
@@ -32,6 +32,7 @@ const EvaluatorsPage = () => {
   // Data State — initialize immediately from module-level cache if available
   const [evaluators, setEvaluators] = useState(() => globalEvaluatorsCache.evaluators);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'displayName', direction: 'asc' });
   // Only show skeleton on the very first load (cache is empty)
   const [loading, setLoading] = useState(() => !globalEvaluatorsCache.loaded);
   const [actionLoading, setActionLoading] = useState(false);
@@ -213,6 +214,75 @@ const EvaluatorsPage = () => {
     return true;
   });
 
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key,
+        direction: 'asc',
+      };
+    });
+  };
+
+  const renderSortIcon = (columnKey) => {
+    if (sortConfig.key === columnKey) {
+      return sortConfig.direction === 'asc' ? (
+        <HiChevronUp className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      ) : (
+        <HiChevronDown className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      );
+    }
+    return (
+      <HiSelector className='w-4 h-4 text-[#9ca3af]/50 group-hover:text-white inline-block transition-colors shrink-0' />
+    );
+  };
+
+  const sortedEvaluators = useMemo(() => {
+    const list = [...filteredEvaluators];
+    if (!sortConfig.key) return list;
+
+    const { key, direction } = sortConfig;
+    const factor = direction === 'asc' ? 1 : -1;
+
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (key) {
+        case 'displayName':
+          comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'email':
+          comparison = (a.email || '').localeCompare(b.email || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'evaluationsMade': {
+          const countA = Number(a.evaluationsMade) || 0;
+          const countB = Number(b.evaluationsMade) || 0;
+          comparison = countA - countB;
+          break;
+        }
+        case 'joinedDate': {
+          const timeA = a.createdAt?.seconds || 0;
+          const timeB = b.createdAt?.seconds || 0;
+          comparison = timeA - timeB;
+          break;
+        }
+        default:
+          comparison = 0;
+      }
+
+      if (comparison === 0 && key !== 'displayName') {
+        comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, { sensitivity: 'base' });
+      }
+
+      return comparison * factor;
+    });
+  }, [filteredEvaluators, sortConfig]);
+
   return (
     <div className='flex min-h-screen bg-[#1a1a1a]'>
       <Toaster />
@@ -283,18 +353,46 @@ const EvaluatorsPage = () => {
               <div className='overflow-x-auto'>
                 <table className='w-full'>
                   <thead>
-                    <tr className='bg-accent'>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        EVALUATOR NAME
+                    <tr className='bg-[#202020] border-b-2 border-accent/80'>
+                      <th
+                        onClick={() => handleSort('displayName')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Evaluator Name'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>EVALUATOR NAME</span>
+                          {renderSortIcon('displayName')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        EMAIL
+                      <th
+                        onClick={() => handleSort('email')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Email'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>EMAIL</span>
+                          {renderSortIcon('email')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        # OF EVALUATIONS
+                      <th
+                        onClick={() => handleSort('evaluationsMade')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by # of Evaluations'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span># OF EVALUATIONS</span>
+                          {renderSortIcon('evaluationsMade')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        JOINED DATE
+                      <th
+                        onClick={() => handleSort('joinedDate')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Joined Date'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>JOINED DATE</span>
+                          {renderSortIcon('joinedDate')}
+                        </div>
                       </th>
                       <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
                         ACTIONS
@@ -304,8 +402,8 @@ const EvaluatorsPage = () => {
                   <tbody>
                     {loading ? (
                       <TableRowSkeleton rows={6} cols={['w-36', 'w-44', 'w-20', 'w-24', 'w-20']} />
-                    ) : filteredEvaluators.length > 0 ? (
-                      filteredEvaluators.map((evaluator) => (
+                    ) : sortedEvaluators.length > 0 ? (
+                      sortedEvaluators.map((evaluator) => (
                         <tr
                           key={evaluator.id}
                           className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}

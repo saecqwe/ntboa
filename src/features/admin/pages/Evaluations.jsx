@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar } from 'react-icons/hi';
+import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar, HiChevronUp, HiSelector, HiChevronRight } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
 import {
@@ -71,6 +71,7 @@ const EvaluationsPage = () => {
   const [evaluations, setEvaluations] = useState(() => globalEvaluationsCache.evaluations);
   const [stats, setStats] = useState(() => globalEvaluationsCache.stats);
   const [loading, setLoading] = useState(() => !globalEvaluationsCache.loaded);
+  const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
   const tierDropdownRef = useRef(null);
   const timeDropdownRef = useRef(null);
@@ -233,8 +234,89 @@ const EvaluationsPage = () => {
     return matchesSearch && matchesTier;
   });
 
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key,
+        direction: 'asc',
+      };
+    });
+  };
+
+  const renderSortIcon = (columnKey) => {
+    if (sortConfig.key === columnKey) {
+      return sortConfig.direction === 'asc' ? (
+        <HiChevronUp className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      ) : (
+        <HiChevronDown className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      );
+    }
+    return (
+      <HiSelector className='w-4 h-4 text-[#9ca3af]/50 group-hover:text-white inline-block transition-colors shrink-0' />
+    );
+  };
+
+  const sortedEvaluations = useMemo(() => {
+    const list = [...filteredEvaluations];
+    if (!sortConfig.key) return list;
+
+    const { key, direction } = sortConfig;
+    const factor = direction === 'asc' ? 1 : -1;
+
+    const parseTierNumber = (tier) => {
+      if (!tier) return -1;
+      const num = parseInt(String(tier).replace(/\D/g, ''), 10);
+      return isNaN(num) ? -1 : num;
+    };
+
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (key) {
+        case 'date': {
+          const timeA = a.createdAtDate ? new Date(a.createdAtDate).getTime() : 0;
+          const timeB = b.createdAtDate ? new Date(b.createdAtDate).getTime() : 0;
+          comparison = timeA - timeB;
+          break;
+        }
+        case 'evaluatorName':
+          comparison = (a.evaluatorName || '').localeCompare(b.evaluatorName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'refereeName':
+          comparison = (a.refereeName || '').localeCompare(b.refereeName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'totalScore': {
+          const scoreA = Number(a.totalScore) || 0;
+          const scoreB = Number(b.totalScore) || 0;
+          comparison = scoreA - scoreB;
+          break;
+        }
+        case 'tier': {
+          const tierA = parseTierNumber(a.tier);
+          const tierB = parseTierNumber(b.tier);
+          if (tierA !== tierB) {
+            comparison = tierA - tierB;
+          } else {
+            comparison = (a.tier || '').localeCompare(b.tier || '');
+          }
+          break;
+        }
+        default:
+          comparison = 0;
+      }
+
+      return comparison * factor;
+    });
+  }, [filteredEvaluations, sortConfig]);
+
   return (
-    <div className='flex min-h-screen bg-[#1a1a1a]'>
+    <div className='flex min-h-screen bg-[#1a1a1a] overflow-x-hidden'>
       {/* Sidebar */}
       <AdminSidebar
         isOpen={sidebarOpen}
@@ -242,7 +324,7 @@ const EvaluationsPage = () => {
       />
 
       {/* Main Content */}
-      <main className='flex-1 lg:ml-64 overflow-y-auto'>
+      <main className='flex-1 min-w-0 lg:ml-64 overflow-y-auto'>
         {/* Header */}
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center gap-4'>
           <BackButton variant='solid' className='shrink-0' />
@@ -345,9 +427,9 @@ const EvaluationsPage = () => {
             </div>
 
             {/* Filters Section */}
-            <div className='flex flex-col sm:flex-row gap-4 mb-6'>
+            <div className='flex flex-col md:flex-row gap-3 md:gap-4 mb-6'>
               {/* Search Input */}
-              <div className='flex-1 relative'>
+              <div className='w-full md:flex-1 relative'>
                 <HiSearch className='absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#6b7280]' />
                 <input
                   type='text'
@@ -358,103 +440,141 @@ const EvaluationsPage = () => {
                 />
               </div>
 
-              {/* Tier Filter Dropdown */}
-              <div className='relative w-full sm:w-[200px]' ref={tierDropdownRef}>
-                <button
-                  onClick={() => setShowTierDropdown(!showTierDropdown)}
-                  className='w-full bg-[#2a2a2a] text-white rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] hover:border-[#4a4a4a] flex items-center justify-between gap-2'
-                >
-                  <span className='flex items-center gap-2'>
-                    <svg className='w-5 h-5 text-[#6b7280]' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z' />
-                    </svg>
-                    {selectedTier}
-                  </span>
-                  <HiChevronDown
-                    className={`w-5 h-5 text-white transition-transform duration-300 ${showTierDropdown ? 'rotate-180' : ''
-                      }`}
-                  />
-                </button>
+              {/* Tier & Time Filter Dropdowns: Side-by-side on mobile (2 columns), flex row on desktop */}
+              <div className='grid grid-cols-2 gap-3 md:flex md:gap-4 md:w-auto'>
+                {/* Tier Filter Dropdown */}
+                <div className='relative w-full md:w-[200px]' ref={tierDropdownRef}>
+                  <button
+                    onClick={() => setShowTierDropdown(!showTierDropdown)}
+                    className='w-full bg-[#2a2a2a] text-white rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] hover:border-[#4a4a4a] flex items-center justify-between gap-1.5 sm:gap-2'
+                  >
+                    <span className='flex items-center gap-1.5 sm:gap-2 truncate'>
+                      <svg className='w-4 h-4 sm:w-5 sm:h-5 text-[#6b7280] shrink-0' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                        <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z' />
+                      </svg>
+                      <span className='truncate'>{selectedTier}</span>
+                    </span>
+                    <HiChevronDown
+                      className={`w-4 h-4 sm:w-5 sm:h-5 text-white shrink-0 transition-transform duration-300 ${showTierDropdown ? 'rotate-180' : ''
+                        }`}
+                    />
+                  </button>
 
-                {showTierDropdown && (
-                  <div className='absolute top-full left-0 right-0 mt-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg shadow-xl overflow-hidden z-50 animate-fadeIn'>
-                    {tierOptions.map((tier) => (
-                      <button
-                        key={tier}
-                        onClick={() => handleTierSelect(tier)}
-                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTier === tier
-                          ? 'bg-accent/20 text-white border-l-4 border-accent'
-                          : 'text-white hover:bg-[#3a3a3a]'
-                          }`}
-                      >
-                        <span>{tier}</span>
-                        {selectedTier === tier && (
-                          <HiCheck className='w-5 h-5 text-accent' />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  {showTierDropdown && (
+                    <div className='absolute top-full left-0 right-0 mt-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg shadow-xl overflow-hidden z-50 animate-fadeIn'>
+                      {tierOptions.map((tier) => (
+                        <button
+                          key={tier}
+                          onClick={() => handleTierSelect(tier)}
+                          className={`w-full px-4 py-3 text-sm sm:text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTier === tier
+                            ? 'bg-accent/20 text-white border-l-4 border-accent'
+                            : 'text-white hover:bg-[#3a3a3a]'
+                            }`}
+                        >
+                          <span>{tier}</span>
+                          {selectedTier === tier && (
+                            <HiCheck className='w-5 h-5 text-accent' />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              {/* Time Filter Dropdown */}
-              <div className='relative w-full sm:w-[200px]' ref={timeDropdownRef}>
-                <button
-                  onClick={() => setShowTimeDropdown(!showTimeDropdown)}
-                  className='w-full bg-[#2a2a2a] text-white rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] hover:border-[#4a4a4a] flex items-center justify-between gap-2'
-                >
-                  <span className='flex items-center gap-2'>
-                    <HiCalendar className='w-5 h-5 text-[#6b7280]' />
-                    {selectedTime}
-                  </span>
-                  <HiChevronDown
-                    className={`w-5 h-5 text-white transition-transform duration-300 ${showTimeDropdown ? 'rotate-180' : ''
-                      }`}
-                  />
-                </button>
+                {/* Time Filter Dropdown */}
+                <div className='relative w-full md:w-[200px]' ref={timeDropdownRef}>
+                  <button
+                    onClick={() => setShowTimeDropdown(!showTimeDropdown)}
+                    className='w-full bg-[#2a2a2a] text-white rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#3a3a3a] hover:border-[#4a4a4a] flex items-center justify-between gap-1.5 sm:gap-2'
+                  >
+                    <span className='flex items-center gap-1.5 sm:gap-2 truncate'>
+                      <HiCalendar className='w-4 h-4 sm:w-5 sm:h-5 text-[#6b7280] shrink-0' />
+                      <span className='truncate'>{selectedTime}</span>
+                    </span>
+                    <HiChevronDown
+                      className={`w-4 h-4 sm:w-5 sm:h-5 text-white shrink-0 transition-transform duration-300 ${showTimeDropdown ? 'rotate-180' : ''
+                        }`}
+                    />
+                  </button>
 
-                {showTimeDropdown && (
-                  <div className='absolute top-full left-0 right-0 mt-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg shadow-xl overflow-hidden z-50 animate-fadeIn'>
-                    {timeOptions.map((time) => (
-                      <button
-                        key={time}
-                        onClick={() => handleTimeSelect(time)}
-                        className={`w-full px-4 py-3 text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTime === time
-                          ? 'bg-accent/20 text-white border-l-4 border-accent'
-                          : 'text-white hover:bg-[#3a3a3a]'
-                          }`}
-                      >
-                        <span>{time}</span>
-                        {selectedTime === time && (
-                          <HiCheck className='w-5 h-5 text-accent' />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  {showTimeDropdown && (
+                    <div className='absolute top-full left-0 right-0 mt-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg shadow-xl overflow-hidden z-50 animate-fadeIn'>
+                      {timeOptions.map((time) => (
+                        <button
+                          key={time}
+                          onClick={() => handleTimeSelect(time)}
+                          className={`w-full px-4 py-3 text-sm sm:text-fluid-base text-body text-left transition-all flex items-center justify-between ${selectedTime === time
+                            ? 'bg-accent/20 text-white border-l-4 border-accent'
+                            : 'text-white hover:bg-[#3a3a3a]'
+                            }`}
+                        >
+                          <span>{time}</span>
+                          {selectedTime === time && (
+                            <HiCheck className='w-5 h-5 text-accent' />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Evaluations Table */}
-            <div className='bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a] mb-6'>
+            {/* Desktop Evaluations Table (>= 768px) */}
+            <div className='hidden md:block bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a] mb-6'>
               <div className='overflow-x-auto'>
                 <table className='w-full'>
                   <thead>
-                    <tr className='bg-accent'>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        DATE
+                    <tr className='bg-[#202020] border-b-2 border-accent/80'>
+                      <th
+                        onClick={() => handleSort('date')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Date'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>DATE</span>
+                          {renderSortIcon('date')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        EVALUATOR NAME
+                      <th
+                        onClick={() => handleSort('evaluatorName')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Evaluator Name'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>EVALUATOR NAME</span>
+                          {renderSortIcon('evaluatorName')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        OFFICIAL NAME
+                      <th
+                        onClick={() => handleSort('refereeName')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Official Name'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>OFFICIAL NAME</span>
+                          {renderSortIcon('refereeName')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        TOTAL SCORE
+                      <th
+                        onClick={() => handleSort('totalScore')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Total Score'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>TOTAL SCORE</span>
+                          {renderSortIcon('totalScore')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        TIER
+                      <th
+                        onClick={() => handleSort('tier')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Tier'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>TIER</span>
+                          {renderSortIcon('tier')}
+                        </div>
                       </th>
                       <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
                         COMMENTS
@@ -470,8 +590,8 @@ const EvaluationsPage = () => {
                           </p>
                         </td>
                       </tr>
-                    ) : filteredEvaluations.length > 0 ? (
-                      filteredEvaluations.map((evaluation) => (
+                    ) : sortedEvaluations.length > 0 ? (
+                      sortedEvaluations.map((evaluation) => (
                         <tr
                           key={evaluation.id}
                           onClick={() => handleViewEvaluation(evaluation)}
@@ -516,6 +636,80 @@ const EvaluationsPage = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Mobile Card View (< 768px) */}
+            <div className='block md:hidden mb-6 space-y-3'>
+              {loading ? (
+                <div className='bg-[#242424] border border-[#3a3a3a] rounded-2xl p-6 text-center text-[#6b7280] text-sm'>
+                  Loading evaluations...
+                </div>
+              ) : sortedEvaluations.length > 0 ? (
+                sortedEvaluations.map((evaluation) => (
+                  <div
+                    key={evaluation.id}
+                    onClick={() => handleViewEvaluation(evaluation)}
+                    className='group bg-[#242424] hover:bg-[#2a2a2a] border border-[#3a3a3a] hover:border-accent/40 rounded-2xl p-4 transition-all duration-150 cursor-pointer shadow-sm active:scale-[0.99]'
+                  >
+                    {/* Card Top Row: Date on left, Tier badge on right */}
+                    <div className='flex items-center justify-between gap-2'>
+                      <span className='text-xs font-medium text-[#9ca3af]'>
+                        {evaluation.createdAtDate ? evaluation.createdAtDate.toLocaleDateString() : 'N/A'}
+                      </span>
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${evaluation.tierColor}`}
+                      >
+                        {evaluation.tier}
+                      </span>
+                    </div>
+
+                    {/* Card Body: Official Name bold white, Evaluator directly underneath */}
+                    <div className='my-3'>
+                      <div className='text-base font-bold text-white group-hover:text-accent transition-colors'>
+                        {evaluation.refereeName}
+                      </div>
+                      {evaluation.game && (
+                        <div className='text-xs text-[#6b7280] mt-0.5'>
+                          {evaluation.game}
+                        </div>
+                      )}
+                      <div className='text-xs text-[#9ca3af] mt-1'>
+                        Evaluator: <span className='text-gray-200 font-medium'>{evaluation.evaluatorName}</span>
+                      </div>
+                    </div>
+
+                    {/* Card Footer: Total Score on left, View Details / Chevron on right */}
+                    <div className='flex items-center justify-between pt-3 border-t border-[#3a3a3a]/70'>
+                      <div className='text-xs text-[#9ca3af] flex items-center gap-1.5'>
+                        <span>Total Score:</span>
+                        <span className='text-sm font-bold text-white px-2 py-0.5 rounded bg-[#2e2e2e] border border-[#3e3e3e]'>
+                          {evaluation.totalScore}
+                        </span>
+                      </div>
+                      <div className='flex items-center gap-1 text-xs text-accent font-semibold group-hover:translate-x-0.5 transition-transform'>
+                        <span>View Details</span>
+                        <HiChevronRight className='w-4 h-4' />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className='bg-[#242424] border border-[#3a3a3a] rounded-2xl p-8 text-center text-[#9ca3af]'>
+                  <p className='text-sm'>No evaluations found.</p>
+                  {(searchQuery || selectedTier !== 'All Tiers' || selectedTime !== 'All Time') && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedTier('All Tiers');
+                        setSelectedTime('All Time');
+                      }}
+                      className='mt-3 text-xs text-accent hover:underline'
+                    >
+                      Reset filters
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer - Pagination and Count */}
@@ -594,11 +788,10 @@ const EvaluationsPage = () => {
                               key={off.id || idx}
                               type='button'
                               onClick={() => setModalActiveTab(idx)}
-                              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                                modalActiveTab === idx
-                                  ? 'bg-accent text-white shadow-md'
-                                  : 'bg-[#1a1a1a] text-[#9ca3af] hover:text-white hover:bg-[#2e2e2e]'
-                              }`}
+                              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${modalActiveTab === idx
+                                ? 'bg-accent text-white shadow-md'
+                                : 'bg-[#1a1a1a] text-[#9ca3af] hover:text-white hover:bg-[#2e2e2e]'
+                                }`}
                             >
                               {off.name}
                             </button>

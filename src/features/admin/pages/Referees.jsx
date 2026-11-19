@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp, getDocs, orderBy, limit } from 'firebase/firestore';
 import { createUser } from '@/features/authentication/services/authService';
@@ -8,7 +8,7 @@ import { db, functions } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
-import { HiMenu, HiPlus, HiPencil, HiTrash, HiX } from 'react-icons/hi';
+import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronUp, HiChevronDown, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
@@ -35,6 +35,7 @@ const RefereesPage = () => {
   const [referees, setReferees] = useState(() => globalRefereesCache.referees);
   const [loading, setLoading] = useState(() => !globalRefereesCache.loaded);
   const [actionLoading, setActionLoading] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'displayName', direction: 'asc' });
 
   // Ref to hold the onSnapshot unsubscribe so useEffect cleanup can reach it
   const unsubscribeRef = useRef(null);
@@ -167,6 +168,126 @@ const RefereesPage = () => {
       (referee.email && referee.email.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesSearch;
   });
+
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc',
+        };
+      }
+      return {
+        key,
+        direction: 'asc',
+      };
+    });
+  };
+
+  const renderSortIcon = (columnKey) => {
+    if (sortConfig.key === columnKey) {
+      return sortConfig.direction === 'asc' ? (
+        <HiChevronUp className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      ) : (
+        <HiChevronDown className='w-4 h-4 text-accent inline-block transition-transform shrink-0' />
+      );
+    }
+    return (
+      <HiSelector className='w-4 h-4 text-[#9ca3af]/50 group-hover:text-white inline-block transition-colors shrink-0' />
+    );
+  };
+
+  // Sort referees based on sortConfig
+  const sortedReferees = useMemo(() => {
+    const list = [...filteredReferees];
+    if (!sortConfig.key) return list;
+
+    const { key, direction } = sortConfig;
+    const factor = direction === 'asc' ? 1 : -1;
+
+    const parseTierNumber = (tier) => {
+      if (!tier) return -1;
+      const num = parseInt(String(tier).replace(/\D/g, ''), 10);
+      return isNaN(num) ? -1 : num;
+    };
+
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (key) {
+        case 'displayName':
+          comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'email':
+          comparison = (a.email || '').localeCompare(b.email || '', undefined, { sensitivity: 'base' });
+          break;
+        case 'tier': {
+          const tierA = parseTierNumber(a.tier);
+          const tierB = parseTierNumber(b.tier);
+          if (tierA !== tierB) {
+            comparison = tierA - tierB;
+          } else {
+            comparison = (a.tier || '').localeCompare(b.tier || '');
+          }
+          break;
+        }
+        case 'suggestedTier': {
+          const tierA = parseTierNumber(a.suggestedTier);
+          const tierB = parseTierNumber(b.suggestedTier);
+          if (tierA !== tierB) {
+            comparison = tierA - tierB;
+          } else {
+            comparison = (a.suggestedTier || '').localeCompare(b.suggestedTier || '');
+          }
+          break;
+        }
+        case 'location': {
+          const locA = a.nextAssignment?.location || '';
+          const locB = b.nextAssignment?.location || '';
+          if (!locA && !locB) comparison = 0;
+          else if (!locA) return 1;
+          else if (!locB) return -1;
+          else comparison = locA.localeCompare(locB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        case 'gameTime': {
+          const timeA = a.nextAssignment?.dateTime ? new Date(a.nextAssignment.dateTime).getTime() : 0;
+          const timeB = b.nextAssignment?.dateTime ? new Date(b.nextAssignment.dateTime).getTime() : 0;
+          if (!timeA && !timeB) comparison = 0;
+          else if (!timeA) return 1;
+          else if (!timeB) return -1;
+          else comparison = timeA - timeB;
+          break;
+        }
+        case 'avgScore': {
+          const scoreA = Number(a.avgScore) || 0;
+          const scoreB = Number(b.avgScore) || 0;
+          comparison = scoreA - scoreB;
+          break;
+        }
+        case 'evaluations': {
+          const countA = Number(a.evaluations) || 0;
+          const countB = Number(b.evaluations) || 0;
+          comparison = countA - countB;
+          break;
+        }
+        case 'status': {
+          const statusA = a.status || 'Active';
+          const statusB = b.status || 'Active';
+          comparison = statusA.localeCompare(statusB, undefined, { sensitivity: 'base' });
+          break;
+        }
+        default:
+          comparison = 0;
+      }
+
+      if (comparison === 0 && key !== 'displayName') {
+        comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, { sensitivity: 'base' });
+      }
+
+      return comparison * factor;
+    });
+  }, [filteredReferees, sortConfig]);
 
   const handleAddReferee = () => {
     setShowAddModal(true);
@@ -384,33 +505,96 @@ const RefereesPage = () => {
               <div className='overflow-x-auto'>
                 <table className='w-full'>
                   <thead>
-                    <tr className='bg-accent'>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        REFEREE NAME
+                    <tr className='bg-[#202020] border-b-2 border-accent/80'>
+                      <th
+                        onClick={() => handleSort('displayName')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Referee Name'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>REFEREE NAME</span>
+                          {renderSortIcon('displayName')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        EMAIL
+                      <th
+                        onClick={() => handleSort('email')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Email'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>EMAIL</span>
+                          {renderSortIcon('email')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        CURRENT TIER
+                      <th
+                        onClick={() => handleSort('tier')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Current Tier'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>CURRENT TIER</span>
+                          {renderSortIcon('tier')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        SUGGESTED TIER
+                      <th
+                        onClick={() => handleSort('suggestedTier')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Suggested Tier'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>SUGGESTED TIER</span>
+                          {renderSortIcon('suggestedTier')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        NEXT LOCATION
+                      <th
+                        onClick={() => handleSort('location')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Next Location'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>NEXT LOCATION</span>
+                          {renderSortIcon('location')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        NEXT GAME TIME
+                      <th
+                        onClick={() => handleSort('gameTime')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Next Game Time'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>NEXT GAME TIME</span>
+                          {renderSortIcon('gameTime')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        AVERAGE SCORE
+                      <th
+                        onClick={() => handleSort('avgScore')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Average Score'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>AVERAGE SCORE</span>
+                          {renderSortIcon('avgScore')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        # OF EVALUATIONS
+                      <th
+                        onClick={() => handleSort('evaluations')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by # of Evaluations'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span># OF EVALUATIONS</span>
+                          {renderSortIcon('evaluations')}
+                        </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
-                        STATUS
+                      <th
+                        onClick={() => handleSort('status')}
+                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        title='Sort by Status'
+                      >
+                        <div className='flex items-center gap-1.5'>
+                          <span>STATUS</span>
+                          {renderSortIcon('status')}
+                        </div>
                       </th>
                       <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
                         ACTIONS
@@ -426,8 +610,8 @@ const RefereesPage = () => {
                           </p>
                         </td>
                       </tr>
-                    ) : filteredReferees.length > 0 ? (
-                      filteredReferees.map((referee) => (
+                    ) : sortedReferees.length > 0 ? (
+                      sortedReferees.map((referee) => (
                         <tr
                           key={referee.id}
                           onClick={() => handleViewReferee(referee.id)}
