@@ -3,28 +3,11 @@
 import React, { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { addDoc, collection, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import EvaluatorHeader from '../components/EvaluatorHeader';
-import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
+import { OFFICIAL_CATEGORIES as CATEGORY_LIST, TIER_DATA, calculateTier, normalizeTier } from '@/lib/evaluationUtils';
 export const dynamic = 'force-dynamic';
-
-const TIER_DATA = [
-  { tier: '100', range: [38, 40], desc: 'Eligible for any Varsity game. Highest proficiency in all areas. Referee (R) for all assignments unless with another 100. Eligible for all levels during playoffs.' },
-  { tier: '150', range: [36, 37], desc: 'Eligible for any Varsity game. Proficient in all areas. Referee (R) unless with another 100. Eligible for all levels during playoffs.' },
-  { tier: '200', range: [33, 35], desc: 'Eligible for all games. CC at 5A Boys. Above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
-  { tier: '300', range: [30, 32], desc: 'Eligible for all games. CC at 6A/5A Girls. Average to above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
-  { tier: '350', range: [27, 29], desc: 'Eligible for Varsity CC up to 4A. Boys/Girls 6A/5A JV. Average proficiency. Referee (R)/U1 unless with higher ranking official.' },
-  { tier: '400', range: [23, 26], desc: 'Eligible up to 3A Varsity. Some proficiency in 3-person. High proficiency 2-person CC. Referee (R) for Post Season JV/Freshman/MS.' },
-  { tier: '500', range: [19, 22], desc: 'Eligible up to 2A Varsity. Med-High proficiency 2-person. Eligible for Post Season MS Tournaments.' },
-  { tier: '600', range: [15, 18], desc: 'Unranked. Newer official with limited experience. Eligible for all JV Assignments.' },
-  { tier: '700', range: [8, 14], desc: '1st or 2nd year official. Eligible for primarily middle school with potential for lower-level sub-varsity.' },
-  { tier: '800', range: [0, 7], desc: 'New to the chapter. Learning phase.' },
-];
-
-const calculateTier = (score) => {
-  return TIER_DATA.find(t => score >= t.range[0] && score <= t.range[1]) || TIER_DATA[TIER_DATA.length - 1];
-};
 
 const EvaluationReviewContent = () => {
   const router = useRouter();
@@ -58,17 +41,19 @@ const EvaluationReviewContent = () => {
   }
 
   const officialParam = searchParams.get('official');
-  let fallbackOfficial = { name: 'Michael Johnson', tier: 'Tier 150', id: null };
-  if (officialParam) {
+  if (parsedOfficials.length === 0 && officialParam) {
     try {
-      fallbackOfficial = JSON.parse(officialParam);
+      const parsedSingle = JSON.parse(officialParam);
+      if (parsedSingle && typeof parsedSingle === 'object' && parsedSingle.id) {
+        parsedOfficials = [parsedSingle];
+      }
     } catch {
-      // keep default fallback
+      // ignore invalid official parameter
     }
   }
 
-  const officials = parsedOfficials.length > 0 ? parsedOfficials : [fallbackOfficial];
-  const official = officials[0];
+  const officials = parsedOfficials.filter((off) => off && typeof off === 'object' && off.id);
+  const official = officials[0] || null;
 
   const ratings = sessionDraft?.ratings || (() => {
     try {
@@ -168,7 +153,7 @@ const EvaluationReviewContent = () => {
   };
 
   const handleSubmit = async () => {
-    if (!user || !official.id) {
+    if (!user || !official?.id) {
       alert(
         'You must be logged in and have a valid official to submit an evaluation.'
       );
@@ -179,69 +164,9 @@ const EvaluationReviewContent = () => {
 
     try {
       const scores = ratings || {};
-      // totalScore is already calculated above
 
-      const evaluationData = {
-        evaluatorId: user.uid,
-        evaluatorName: headerName,
-        scores,
-        totalScore,
-        maxScore,
-        tier: currentTier.tier, // Save the calculated tier
-        comments: comments || {},
-        groupComment: groupComment || '',
-        isGroup: officials.length > 1,
-        officials: officials.map(({ id, name, tier, assignmentId, location, date }) => ({
-          id,
-          name,
-          tier,
-          assignmentId,
-          location,
-          date,
-        })),
-        gameDate: official.date || new Date().toISOString(),
-        location: gameLocation || official.location,
-        createdAt: serverTimestamp(),
-      };
-
-      if (officials.length > 1) {
-        evaluationData.refereeIds = officials.map((off) => off.id).filter(Boolean);
-        evaluationData.refereeNames = officials.map((off) => off.name).filter(Boolean);
-        evaluationData.refereeName = evaluationData.refereeNames.join(', ');
-      } else {
-        evaluationData.refereeId = official.id;
-        evaluationData.refereeName = official.name || 'Referee';
-      }
-
-      await addDoc(collection(db, 'evaluations'), evaluationData);
-
-      // 1. Increment evaluator's evaluationsMade counter
-      try {
-        await updateDoc(doc(db, 'users', user.uid), {
-          evaluationsMade: increment(1),
-        });
-      } catch (countError) {
-        console.error("Error updating evaluator evaluationsMade:", countError);
-      }
-
-      // 2. Update assignment status for all officials in the group
-      await Promise.all(officials.map(async (off) => {
-        if (!off.assignmentId) return;
-        try {
-          const assignmentRef = doc(db, 'assignments', off.assignmentId);
-          await updateDoc(assignmentRef, {
-            status: 'completed',
-            completedAt: serverTimestamp(),
-          });
-        } catch (updateError) {
-          console.error("Error updating assignment status for official", off.id, updateError);
-        }
-      }));
-
-      // 3. Update each official's profile with their individual Suggested Tier and rolling aggregates
-      await Promise.all(officials.map(async (off, index) => {
-        if (!off.id) return;
-        try {
+      const officialsPayload = officials.map(
+        ({ id, name, tier, assignmentId, location, date }, index) => {
           const officialKey = `official_${index}`;
           const refScores =
             ratings[officialKey] && typeof ratings[officialKey] === 'object'
@@ -253,16 +178,56 @@ const EvaluationReviewContent = () => {
           const officialScore =
             scoreValues.length > 0 ? scoreValues.reduce((a, b) => a + b, 0) : effectiveScoreForTier;
           const officialTier = calculateTier(officialScore);
+          return {
+            id,
+            name,
+            tier,
+            suggestedTier: normalizeTier(officialTier.tier),
+            assignmentId,
+            location,
+            date,
+          };
+        }
+      );
 
-          const refereeRef = doc(db, 'users', off.id);
-          await updateDoc(refereeRef, {
-            suggestedTier: `Tier ${officialTier.tier}`,
-            evaluations: increment(1),
-            evaluationsCount: increment(1),
-            totalScoreSum: increment(officialScore),
+      const evaluationData = {
+        evaluatorId: user.uid,
+        evaluatorName: headerName,
+        scores,
+        totalScore,
+        maxScore,
+        tier: normalizeTier(currentTier.tier),
+        comments: comments || {},
+        groupComment: groupComment || '',
+        isGroup: officials.length > 1,
+        officials: officialsPayload,
+        gameDate: official?.date || new Date().toISOString(),
+        location: gameLocation || official?.location || 'N/A',
+        createdAt: serverTimestamp(),
+      };
+
+      if (officials.length > 1) {
+        evaluationData.refereeIds = officials.map((off) => off.id).filter(Boolean);
+        evaluationData.refereeNames = officials.map((off) => off.name).filter(Boolean);
+        evaluationData.refereeName = evaluationData.refereeNames.join(', ');
+      } else {
+        evaluationData.refereeId = official.id;
+        evaluationData.refereeName = official?.name || 'Referee';
+      }
+
+      await addDoc(collection(db, 'evaluations'), evaluationData);
+
+      // Mark completed on linked assignments (user rollups are computed server-side by onEvaluationWrite)
+      await Promise.all(officials.map(async (off) => {
+        if (!off.assignmentId) return;
+        try {
+          const assignmentRef = doc(db, 'assignments', off.assignmentId);
+          await updateDoc(assignmentRef, {
+            status: 'completed',
+            completedAt: serverTimestamp(),
           });
-        } catch (tierError) {
-          console.error("Error updating referee suggested tier for official", off.id, tierError);
+        } catch (updateError) {
+          console.error("Error updating assignment status for official", off.id, updateError);
         }
       }));
 
@@ -294,6 +259,36 @@ const EvaluationReviewContent = () => {
     </div>
   );
 
+  if (!official) {
+    return (
+      <div className='min-h-screen flex flex-col bg-gradient-secondary'>
+        <EvaluatorHeader
+          userName={headerName}
+          userInitials={headerInitials}
+          showBackButton={true}
+        />
+        <hr className='border-white/20 my-4' />
+        <div className='flex-1 bg-[#181818] flex items-center justify-center px-6 py-12'>
+          <div className='max-w-md w-full bg-[#2a2a2a] rounded-[20px] p-8 border border-[#3a3a3a] text-center space-y-4'>
+            <h2 className='text-[20px] font-semibold text-white heading'>
+              No Evaluation Draft Found
+            </h2>
+            <p className='text-sm text-[#9ca3af]'>
+              Start a new evaluation to review scores, comments, and submit feedback.
+            </p>
+            <button
+              type='button'
+              onClick={() => router.push('/evaluator/new-evaluation')}
+              className='w-full bg-accent hover:opacity-90 text-white rounded-[15px] py-3.5 font-semibold transition-all cursor-pointer'
+            >
+              Start New Evaluation
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
       {/* Header - Same as Game Context */}
@@ -319,12 +314,12 @@ const EvaluationReviewContent = () => {
               <div className='bg-[#2a2a2a] rounded-[20px] p-6 lg:p-7 border border-[#3a3a3a] flex flex-col items-center text-center'>
                 <div className='w-20 h-20 lg:w-24 lg:h-24 rounded-full bg-accent flex items-center justify-center mb-4'>
                   <span className='text-[32px] lg:text-[36px] text-white font-bold'>
-                    {official.name.charAt(0)}
+                    {(official.name || 'O').charAt(0)}
                   </span>
                 </div>
 
                 <h3 className='text-[20px] lg:text-[22px] font-semibold text-white text-body mb-1'>
-                  {official.name}
+                  {official.name || 'Official'}
                 </h3>
 
                 <p className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body'>

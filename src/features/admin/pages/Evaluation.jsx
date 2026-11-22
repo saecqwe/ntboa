@@ -13,6 +13,7 @@ import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 import {
   OFFICIAL_CATEGORIES,
   LEGACY_CATEGORIES,
+  TIER_DATA,
   getCategoryScore,
   getEvaluationOfficials,
   getScoresForOfficial,
@@ -20,6 +21,7 @@ import {
   getOfficialTotalScore,
   getScoreColor,
   getScoreBackground,
+  normalizeTier,
 } from '@/lib/evaluationUtils';
 
 // Module-level cache across tab navigations
@@ -114,11 +116,20 @@ const EvaluationDetailPage = () => {
             submittedAt: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toISOString() : null,
           };
 
+          const initialOfficials = getEvaluationOfficials(formattedEvaluation);
+          const initialIsGroup = initialOfficials.length > 1 || Boolean(evalData.isGroup);
+          const firstOfficial = initialOfficials[0];
+          const initialTierAssigned =
+            normalizeTier(firstOfficial?.suggestedTier) ||
+            (!initialIsGroup ? normalizeTier(evalData.tier) : '') ||
+            normalizeTier(firstOfficial?.tier || refereeData?.tier) ||
+            'Tier 100';
+
           const initialEditForm = {
             scores: { ...initialScores },
             comments: initialComments,
             recommendations: evalData.recommendations || evalData.feedback || evalData.groupComment || '',
-            tierAssigned: evalData.tier || refereeData?.tier || 'N/A',
+            tierAssigned: initialTierAssigned,
           };
 
           globalEvaluationDetailCache.set(params.id, {
@@ -143,9 +154,25 @@ const EvaluationDetailPage = () => {
     return getEvaluationOfficials(evaluation);
   }, [evaluation]);
 
+  const isMultiOfficialGroup = useMemo(() => {
+    return officialsList.length > 1 || Boolean(evaluation?.isGroup);
+  }, [officialsList.length, evaluation?.isGroup]);
+
+  const hasNestedScores = useMemo(() => {
+    const raw = evaluation?.rawScores;
+    return Boolean(raw && (raw.official_0 || raw.official || isMultiOfficialGroup));
+  }, [evaluation?.rawScores, isMultiOfficialGroup]);
+
+  const resolveEditableTier = (off, evalObj) =>
+    normalizeTier(off?.suggestedTier) ||
+    (!isMultiOfficialGroup ? normalizeTier(evalObj?.tierAssigned || evalObj?.tier) : '') ||
+    normalizeTier(off?.tier) ||
+    'Tier 100';
+
   const activeOfficial = officialsList[activeOfficialIndex] || officialsList[0] || {
     name: evaluation?.referee?.name || 'Official',
     tier: evaluation?.tierAssigned || 'N/A',
+    suggestedTier: '',
   };
 
   const activeScores = useMemo(() => {
@@ -170,26 +197,17 @@ const EvaluationDetailPage = () => {
     return OFFICIAL_CATEGORIES;
   }, [isEditing, editForm?.scores, activeScores]);
 
+  const officialMaxScore = activeCategories.length * 5;
 
   const handleEditToggle = () => {
-    if (isEditing) {
-      // Reset editForm to currently active official
-      setEditForm({
-        scores: { ...activeScores },
-        comments: activeComments,
-        recommendations: evaluation.recommendations,
-        tierAssigned: activeOfficial.tier || evaluation.tierAssigned,
-      });
-      setIsEditing(false);
-    } else {
-      setEditForm({
-        scores: { ...activeScores },
-        comments: activeComments,
-        recommendations: evaluation.recommendations,
-        tierAssigned: activeOfficial.tier || evaluation.tierAssigned,
-      });
-      setIsEditing(true);
-    }
+    const nextTier = resolveEditableTier(activeOfficial, evaluation);
+    setEditForm({
+      scores: { ...activeScores },
+      comments: activeComments,
+      recommendations: evaluation.recommendations,
+      tierAssigned: nextTier,
+    });
+    setIsEditing(!isEditing);
   };
 
   const handleScoreChange = (categoryKey, value) => {
@@ -214,11 +232,10 @@ const EvaluationDetailPage = () => {
     try {
       const evalRef = doc(db, 'evaluations', params.id);
 
-      const isGroup = evaluation.rawScores && (evaluation.rawScores.official_0 || evaluation.officials);
       let updatedScoresPayload = editForm.scores;
       let updatedCommentsPayload = editForm.comments;
 
-      if (isGroup) {
+      if (hasNestedScores) {
         const offKey = `official_${activeOfficialIndex}`;
         updatedScoresPayload = {
           ...(typeof evaluation.rawScores === 'object' ? evaluation.rawScores : {}),
@@ -230,9 +247,9 @@ const EvaluationDetailPage = () => {
         };
       }
 
-      // Calculate total score properly: sum across all officials in a group eval, or the single official's scores
+      // Calculate total score properly: sum across all nested official objects, or flat single-official scores
       let newTotalScore = 0;
-      if (isGroup && updatedScoresPayload && typeof updatedScoresPayload === 'object') {
+      if (hasNestedScores && updatedScoresPayload && typeof updatedScoresPayload === 'object') {
         Object.values(updatedScoresPayload).forEach((officialScores) => {
           if (officialScores && typeof officialScores === 'object') {
             newTotalScore += Object.values(officialScores).reduce(
@@ -254,26 +271,36 @@ const EvaluationDetailPage = () => {
         );
       }
 
-      await updateDoc(evalRef, {
+      const normalizedTier = normalizeTier(editForm.tierAssigned) || 'Tier 100';
+
+      const baseOfficials =
+        Array.isArray(evaluation.officials) && evaluation.officials.length > 0
+          ? evaluation.officials
+          : officialsList.map(({ id, name, tier, suggestedTier }) => ({
+              id,
+              name,
+              tier,
+              suggestedTier: suggestedTier || '',
+            }));
+
+      const updatedOfficials = baseOfficials.map((off, idx) =>
+        idx === activeOfficialIndex
+          ? { ...off, suggestedTier: normalizedTier }
+          : off
+      );
+
+      const updatePayload = {
         scores: updatedScoresPayload,
         totalScore: newTotalScore,
         comments: updatedCommentsPayload,
         recommendations: editForm.recommendations,
-        tier: editForm.tierAssigned,
-      });
-
-      // Sync tier to referee profile if single evaluation or primary official
-      const refId = activeOfficial.id && !activeOfficial.id.startsWith('official_') ? activeOfficial.id : evaluation.refereeId;
-      if (refId) {
-        try {
-          const refereeRef = doc(db, 'users', refId);
-          await updateDoc(refereeRef, {
-            suggestedTier: editForm.tierAssigned
-          });
-        } catch (err) {
-          console.error("Error syncing tier to user profile:", err);
-        }
+        officials: updatedOfficials,
+      };
+      if (!isMultiOfficialGroup) {
+        updatePayload.tier = normalizedTier;
       }
+
+      await updateDoc(evalRef, updatePayload);
 
       toast.success("Evaluation updated successfully!");
 
@@ -281,18 +308,24 @@ const EvaluationDetailPage = () => {
         ...evaluation,
         rawScores: updatedScoresPayload,
         rawComments: updatedCommentsPayload,
-        scores: editForm.scores,
+        scores: hasNestedScores ? updatedScoresPayload : editForm.scores,
+        comments: hasNestedScores ? updatedCommentsPayload : editForm.comments,
+        officials: updatedOfficials,
         totalScore: newTotalScore,
-        comments: editForm.comments,
         recommendations: editForm.recommendations,
-        tierAssigned: editForm.tierAssigned,
+        tierAssigned: !isMultiOfficialGroup ? normalizedTier : evaluation.tierAssigned,
+      };
+      const updatedEditForm = {
+        ...editForm,
+        tierAssigned: normalizedTier,
       };
       globalEvaluationDetailCache.set(params.id, {
         evaluation: updatedEval,
-        editForm: { ...editForm },
+        editForm: updatedEditForm,
       });
 
       setEvaluation(updatedEval);
+      setEditForm(updatedEditForm);
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating evaluation:", error);
@@ -394,7 +427,7 @@ const EvaluationDetailPage = () => {
                             ...prev,
                             scores: { ...offScores },
                             comments: offComments,
-                            tierAssigned: off.tier || evaluation.tierAssigned || 'N/A',
+                            tierAssigned: resolveEditableTier(off, evaluation),
                           }));
                         }
                       }}
@@ -442,7 +475,7 @@ const EvaluationDetailPage = () => {
                   <div className='font-bold text-2xl'>
                     {isEditing
                       ? Object.values(editForm.scores || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)
-                      : activeTotalScore}/{evaluation.maxScore || (activeCategories.length * 5)}
+                      : activeTotalScore}/{officialMaxScore}
                   </div>
                 </div>
               </div>
@@ -644,20 +677,24 @@ const EvaluationDetailPage = () => {
                     onChange={(e) => handleTextChange('tierAssigned', e.target.value)}
                     className='bg-[#1a1a1a] text-white border border-[#4a4a4a] rounded px-4 py-2 focus:outline-none focus:border-accent'
                   >
-                    <option>Tier 100</option>
-                    <option>Tier 150</option>
-                    <option>Tier 200</option>
-                    <option>Tier 250</option>
+                    {TIER_DATA.map((t) => (
+                      <option key={t.tier} value={`Tier ${t.tier}`}>
+                        Tier {t.tier}
+                      </option>
+                    ))}
                   </select>
                 ) : (
                   <span className='inline-block px-4 py-2 rounded-full text-lg font-semibold bg-[#e5e7eb] text-[#374151]'>
-                    {activeOfficial.tier || evaluation.tierAssigned}
+                    {activeOfficial.suggestedTier ||
+                      (!isMultiOfficialGroup ? normalizeTier(evaluation.tierAssigned) : '') ||
+                      normalizeTier(activeOfficial.tier) ||
+                      'N/A'}
                   </span>
                 )}
 
                 <div className='text-sm text-[#9ca3af]'>
                   Based on total score of {isEditing ? Object.values(editForm.scores || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) : activeTotalScore}/
-                  {evaluation.maxScore || (activeCategories.length * 5)}
+                  {officialMaxScore}
                 </div>
               </div>
             </div>

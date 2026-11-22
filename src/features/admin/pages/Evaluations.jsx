@@ -17,6 +17,7 @@ import {
   getScoresForOfficial,
   getCommentsForOfficial,
   getOfficialTotalScore,
+  normalizeTier,
 } from '@/lib/evaluationUtils';
 
 // ---------------------------------------------------------------------------
@@ -905,7 +906,7 @@ const EvaluationsPage = () => {
                             Suggested Tier
                           </div>
                           <div className='text-fluid-4xl font-bold text-white heading'>
-                            {selectedEvaluation.suggestedTier || activeOfficial.tier || 'N/A'}
+                            {activeOfficial.suggestedTier || normalizeTier(selectedEvaluation.suggestedTier || selectedEvaluation.tier) || activeOfficial.tier || 'N/A'}
                           </div>
                         </div>
                       </div>

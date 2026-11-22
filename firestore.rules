@@ -2,6 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required on create, equals userId)
+    //   - displayName: string (required on evaluator referee create, 1..120 chars; owner-updatable <= 120 chars)
+    //   - name: string (optional, owner-updatable <= 120 chars)
+    //   - email: string (required on create, 1..254 chars)
+    //   - phone: string (optional, owner-updatable <= 40 chars)
+    //   - role: string ('admin' | 'evaluator' | 'referee'; evaluator create locked to 'referee')
+    //   - status: string ('Active' | 'Disabled'; evaluator create locked to 'Active')
+    //   - tier: string (required on referee create, 1..30 chars; admin-managed on update)
+    //   - photoURL: string (required '' on evaluator referee create; owner-updatable '' or http(s) URL <= 2048 chars)
+    //   - photo: string (optional, owner-updatable '' or http(s) URL <= 2048 chars)
+    //   - profilePhotoUrl: string (optional, owner-updatable '' or http(s) URL <= 2048 chars)
+    //   - createdAt: timestamp (required == request.time on evaluator referee create)
+    //   - updatedAt: timestamp (optional, owner-updatable)
+    //   - avgScore, evaluations, evaluationsCount, totalScoreSum: number (0 on evaluator referee create, server-managed)
+    //   - suggestedTier: string ('' on evaluator referee create, server-managed)
+    //   - evaluationsMade: number (evaluator docs, server-managed)
+    //   - assignedReferees: list (optional, evaluator docs)
+    //
+    // Collection: evaluations
+    // Document ID: {evaluationId}
+    // Fields:
+    //   - evaluatorId: string (required on evaluator create == request.auth.uid, immutable for evaluators)
+    //   - refereeId: string (optional, single-official evaluation)
+    //   - refereeIds: list (optional, group evaluation)
+    //   - scores, totalScore, maxScore, tier, comments, groupComment, isGroup, officials, gameDate, location, createdAt, recommendations
+    //
+    // Collection: assignments
+    // Document ID: {assignmentId}
+    // Fields: evaluatorId, refereeIds, location, scheduledDate, status, createdAt, completedAt
+    //
+    // Collection: locations
+    // Document ID: {locationId}
+    // Fields: name, address, createdAt
+    //
+    // ===============================================================
+
     // Helper functions
     function isAuthenticated() {
       return request.auth != null;
@@ -13,7 +56,7 @@ service cloud.firestore {
 
     function hasRole(role) {
       return isAuthenticated() && (
-        request.auth.token.role == role ||
+        ('role' in request.auth.token && request.auth.token.role == role) ||
         getUserData().role == role
       );
     }
@@ -30,23 +73,101 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Domain validators
+    function isValidPhotoUrl(val) {
+      return val is string && (
+        val == '' ||
+        (val.size() <= 2048 && (val.matches('^https://.*') || val.matches('^http://.*')))
+      );
+    }
+
+    function isValidProfileFieldIfModified(field, maxLen) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field]) ||
+        (field in request.resource.data &&
+         request.resource.data[field] is string &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidPhotoFieldIfModified(field) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field]) ||
+        (field in request.resource.data &&
+         isValidPhotoUrl(request.resource.data[field]));
+    }
+
+    function isValidOwnerProfileUpdate() {
+      let allowedKeys = ['name', 'displayName', 'phone', 'photo', 'photoURL', 'profilePhotoUrl', 'updatedAt'];
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return affected.hasOnly(allowedKeys) &&
+             isValidProfileFieldIfModified('name', 120) &&
+             isValidProfileFieldIfModified('displayName', 120) &&
+             isValidProfileFieldIfModified('phone', 40) &&
+             isValidPhotoFieldIfModified('photo') &&
+             isValidPhotoFieldIfModified('photoURL') &&
+             isValidPhotoFieldIfModified('profilePhotoUrl') &&
+             (!affected.hasAny(['updatedAt']) ||
+              ('updatedAt' in request.resource.data && request.resource.data.updatedAt is timestamp));
+    }
+
+    function isValidEvaluatorCreatedReferee(userId) {
+      let data = request.resource.data;
+      let expectedFields = [
+        'uid',
+        'displayName',
+        'email',
+        'role',
+        'tier',
+        'photoURL',
+        'createdAt',
+        'avgScore',
+        'evaluations',
+        'evaluationsCount',
+        'totalScoreSum',
+        'status',
+        'suggestedTier'
+      ];
+      return data.keys().hasOnly(expectedFields) &&
+             data.keys().hasAll(expectedFields) &&
+             data.uid is string &&
+             data.uid == userId &&
+             data.role == 'referee' &&
+             data.status == 'Active' &&
+             data.displayName is string &&
+             data.displayName.size() > 0 &&
+             data.displayName.size() <= 120 &&
+             data.email is string &&
+             data.email.size() > 0 &&
+             data.email.size() <= 254 &&
+             data.tier is string &&
+             data.tier.size() > 0 &&
+             data.tier.size() <= 30 &&
+             data.photoURL == '' &&
+             data.createdAt == request.time &&
+             data.avgScore is number && data.avgScore == 0 &&
+             data.evaluations is number && data.evaluations == 0 &&
+             data.evaluationsCount is number && data.evaluationsCount == 0 &&
+             data.totalScoreSum is number && data.totalScoreSum == 0 &&
+             data.suggestedTier == '';
+    }
+
     // USERS COLLECTION
     match /users/{userId} {
       // Any authenticated user can read profiles (needed for name lookups, directories)
       allow read: if isAuthenticated();
 
-      // Users can update their own profile details, but cannot alter their role or status directly.
-      // Evaluators can safely update suggestedTier and evaluation stats rollups on referee documents.
+      // Users can update only their own non-privileged profile fields; role, status, tier, and stats rollups are server-managed
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        (isOwner(userId) && 
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status'])) ||
-        (isEvaluator() && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suggestedTier', 'evaluations', 'evaluationsCount', 'totalScoreSum', 'avgScore']))
+        (isOwner(userId) && isValidOwnerProfileUpdate())
       );
 
-      // Only admins can create or delete user records
-      allow create, delete: if isAdmin();
+      // Admins can create any user record; Evaluators can create strictly validated new referee records
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        (isEvaluator() && isValidEvaluatorCreatedReferee(userId))
+      );
+
+      // Only admins can delete user records
+      allow delete: if isAdmin();
     }
 
     // EVALUATIONS COLLECTION
@@ -69,7 +190,9 @@ service cloud.firestore {
 
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        (isEvaluator() && resource.data.evaluatorId == request.auth.uid)
+        (isEvaluator() &&
+         resource.data.evaluatorId == request.auth.uid &&
+         request.resource.data.evaluatorId == resource.data.evaluatorId)
       );
 
       // Only Admins can delete evaluations
@@ -89,6 +212,11 @@ service cloud.firestore {
     match /locations/{locationId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // Default deny any unmatched collections or subcollections
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -91,18 +91,44 @@ const RefereeDashboardPage = () => {
       where('refereeIds', 'array-contains', userData.uid)
     );
 
-    const evalsMap = new Map();
+    let singleMap = new Map();
+    let groupMap = new Map();
+
+    const extractRefereeScore = (data) => {
+      const refScores = getScoresForReferee(data, userData.uid);
+      const hasCategoryNumbers =
+        refScores &&
+        typeof refScores === 'object' &&
+        Object.values(refScores).some((v) => typeof v === 'number' && Number.isFinite(v));
+
+      if (hasCategoryNumbers) {
+        return getOfficialTotalScore(refScores);
+      }
+
+      const fallbackTop = Number(data.overallScore ?? data.totalScore ?? data.score);
+      if (!Number.isFinite(fallbackTop) || fallbackTop <= 0) return 0;
+
+      const isGroup = Boolean(
+        data.isGroup ||
+        (Array.isArray(data.officials) && data.officials.length > 1) ||
+        (Array.isArray(data.refereeIds) && data.refereeIds.length > 1)
+      );
+      if (isGroup) {
+        const count =
+          (Array.isArray(data.officials) && data.officials.length) ||
+          (Array.isArray(data.refereeIds) && data.refereeIds.length) ||
+          1;
+        return fallbackTop / count;
+      }
+      return fallbackTop;
+    };
 
     const recalculateStats = () => {
+      const evalsMap = new Map([...singleMap, ...groupMap]);
       const total = evalsMap.size;
       let sumScore = 0;
       evalsMap.forEach((data) => {
-        const refScores = getScoresForReferee(data, userData.uid);
-        let s = data.overallScore || data.totalScore;
-        if (!s) {
-          s = getOfficialTotalScore(refScores);
-        }
-        sumScore += Number(s) || 0;
+        sumScore += extractRefereeScore(data);
       });
 
       // Calculate real delta against previous average if at least 2 evaluations exist
@@ -114,8 +140,8 @@ const RefereeDashboardPage = () => {
           const tB = b.createdAt?.seconds || 0;
           return tB - tA;
         });
-        const latestScore = getOfficialTotalScore(getScoresForReferee(evalsList[0], userData.uid)) || evalsList[0].totalScore || 0;
-        const pastSum = evalsList.slice(1).reduce((acc, ev) => acc + (getOfficialTotalScore(getScoresForReferee(ev, userData.uid)) || ev.totalScore || 0), 0);
+        const latestScore = extractRefereeScore(evalsList[0]);
+        const pastSum = evalsList.slice(1).reduce((acc, ev) => acc + extractRefereeScore(ev), 0);
         const pastAvg = pastSum / (evalsList.length - 1);
         if (pastAvg > 0) {
           const diff = ((latestScore - pastAvg) / pastAvg) * 100;
@@ -133,12 +159,16 @@ const RefereeDashboardPage = () => {
     };
 
     const unsubscribeEvalsSingle = onSnapshot(qEvalsSingle, (snap) => {
-      snap.forEach((doc) => evalsMap.set(doc.id, doc.data()));
+      const nextSingle = new Map();
+      snap.forEach((docSnap) => nextSingle.set(docSnap.id, docSnap.data()));
+      singleMap = nextSingle;
       recalculateStats();
     }, (err) => console.error('Error in evaluations single listener:', err));
 
     const unsubscribeEvalsGroup = onSnapshot(qEvalsGroup, (snap) => {
-      snap.forEach((doc) => evalsMap.set(doc.id, doc.data()));
+      const nextGroup = new Map();
+      snap.forEach((docSnap) => nextGroup.set(docSnap.id, docSnap.data()));
+      groupMap = nextGroup;
       recalculateStats();
     }, (err) => console.error('Error in evaluations group listener:', err));
 

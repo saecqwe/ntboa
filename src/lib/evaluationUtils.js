@@ -1,7 +1,41 @@
 /**
- * Centralized evaluation utilities, category schemas, and normalization helpers.
+ * Centralized evaluation utilities, category schemas, tier ranking, and normalization helpers.
  * Single source of truth across Admin, Referee, and Evaluator views.
  */
+
+export const TIER_DATA = [
+  { tier: '100', min: 38, range: [38, 40], desc: 'Eligible for any Varsity game. Highest proficiency in all areas. Referee (R) for all assignments unless with another 100. Eligible for all levels during playoffs.' },
+  { tier: '150', min: 36, range: [36, 37], desc: 'Eligible for any Varsity game. Proficient in all areas. Referee (R) unless with another 100. Eligible for all levels during playoffs.' },
+  { tier: '200', min: 33, range: [33, 35], desc: 'Eligible for all games. CC at 5A Boys. Above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '300', min: 30, range: [30, 32], desc: 'Eligible for all games. CC at 6A/5A Girls. Average to above average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '350', min: 27, range: [27, 29], desc: 'Eligible for Varsity CC up to 4A. Boys/Girls 6A/5A JV. Average proficiency. Referee (R)/U1 unless with higher ranking official.' },
+  { tier: '400', min: 23, range: [23, 26], desc: 'Eligible up to 3A Varsity. Some proficiency in 3-person. High proficiency 2-person CC. Referee (R) for Post Season JV/Freshman/MS.' },
+  { tier: '500', min: 19, range: [19, 22], desc: 'Eligible up to 2A Varsity. Med-High proficiency 2-person. Eligible for Post Season MS Tournaments.' },
+  { tier: '600', min: 15, range: [15, 18], desc: 'Unranked. Newer official with limited experience. Eligible for all JV Assignments.' },
+  { tier: '700', min: 8, range: [8, 14], desc: '1st or 2nd year official. Eligible for primarily middle school with potential for lower-level sub-varsity.' },
+  { tier: '800', min: -Infinity, range: [0, 7], desc: 'New to the chapter. Learning phase.' },
+];
+
+/**
+ * Resolves the chapter tier object for any numeric score without range-gap fallthrough.
+ */
+export const calculateTier = (score) => {
+  const num = Number(score);
+  if (!Number.isFinite(num)) return TIER_DATA[TIER_DATA.length - 1];
+  return TIER_DATA.find((t) => num >= t.min) || TIER_DATA[TIER_DATA.length - 1];
+};
+
+/**
+ * Normalizes tier strings (e.g., "150" or "Tier 150") into "Tier 150".
+ * Returns '' for empty, null, or "N/A" values so callers never produce "Tier N/A".
+ */
+export const normalizeTier = (rawTier) => {
+  if (rawTier === null || rawTier === undefined) return '';
+  const trimmed = String(rawTier).trim();
+  if (!trimmed || /^n\/a$/i.test(trimmed) || /^tier\s*n\/a$/i.test(trimmed)) return '';
+  const match = trimmed.match(/(\d+)/);
+  return match ? `Tier ${match[1]}` : '';
+};
 
 export const OFFICIAL_CATEGORIES = [
   { label: 'Positioning & Court Coverage', name: 'Positioning & Court Coverage', key: 'positioning', id: 'positioning', max: 5 },
@@ -56,11 +90,16 @@ export const getEvaluationOfficials = (evalData) => {
 
   // Group evaluations with full officials array
   if (Array.isArray(evalData.officials) && evalData.officials.length > 0) {
+    const fallbackSingleTier =
+      evalData.officials.length === 1
+        ? normalizeTier(evalData.suggestedTier || evalData.tier)
+        : '';
     return evalData.officials.map((off, idx) => ({
       index: idx,
       id: off.id || `official_${idx}`,
       name: off.name || `Official ${idx + 1}`,
       tier: off.tier || evalData.tier || 'N/A',
+      suggestedTier: normalizeTier(off.suggestedTier) || fallbackSingleTier || '',
     }));
   }
 
@@ -71,6 +110,7 @@ export const getEvaluationOfficials = (evalData) => {
       id: evalData.refereeIds?.[idx] || `official_${idx}`,
       name: name || `Official ${idx + 1}`,
       tier: evalData.tier || 'N/A',
+      suggestedTier: '',
     }));
   }
 
@@ -91,6 +131,7 @@ export const getEvaluationOfficials = (evalData) => {
         id: evalData.refereeIds?.[idx] || key,
         name,
         tier: evalData.tier || 'N/A',
+        suggestedTier: officialKeys.length === 1 ? normalizeTier(evalData.suggestedTier || evalData.tier) : '',
       };
     });
   }
@@ -101,6 +142,7 @@ export const getEvaluationOfficials = (evalData) => {
     id: evalData.refereeId || 'official_0',
     name: evalData.refereeName || 'Official',
     tier: evalData.tier || 'N/A',
+    suggestedTier: normalizeTier(evalData.suggestedTier || evalData.tier) || '',
   }];
 };
 

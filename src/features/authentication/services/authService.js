@@ -25,8 +25,13 @@ export const login = (email, password) => {
 export const logout = async () => {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem('ntboa_admin_profile');
-      localStorage.removeItem('evaluatorProfile');
+      const keysToRemove = Object.keys(localStorage).filter(
+        (key) =>
+          key === 'ntboa_admin_profile' ||
+          key.startsWith('ntboa_admin_profile_') ||
+          key === 'evaluatorProfile'
+      );
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
       sessionStorage.removeItem('ntboa_pending_eval');
       sessionStorage.clear();
     } catch (storageErr) {

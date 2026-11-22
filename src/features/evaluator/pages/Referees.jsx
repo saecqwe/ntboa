@@ -91,6 +91,8 @@ const EvaluatorRefereesPage = () => {
         createdAt: serverTimestamp(),
         avgScore: 0,
         evaluations: 0,
+        evaluationsCount: 0,
+        totalScoreSum: 0,
         status: 'Active',
         suggestedTier: '',
       });

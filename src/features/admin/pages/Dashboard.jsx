@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, limit, orderBy, documentId, getCountFromServer } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
@@ -12,9 +12,8 @@ import { HiStar } from 'react-icons/hi2';
 import { FaTrophy } from 'react-icons/fa';
 import {
   getScoresForOfficial,
-  getScoresForReferee,
   getOfficialTotalScore,
-  getEvaluationOfficials,
+  normalizeTier,
 } from '@/lib/evaluationUtils';
 import {
   LineChart,
@@ -58,23 +57,66 @@ const AdminDashboardPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const evaluationsQuery = query(
+        const sixDaysAgo = new Date();
+        sixDaysAgo.setHours(0, 0, 0, 0);
+        sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+
+        const refereesQuery = query(
+          collection(db, 'users'),
+          where('role', '==', 'referee')
+        );
+        const weekEvalsQuery = query(
+          collection(db, 'evaluations'),
+          where('createdAt', '>=', sixDaysAgo)
+        );
+        const recentEvalsQuery = query(
           collection(db, 'evaluations'),
           orderBy('createdAt', 'desc'),
-          limit(500)
+          limit(50)
         );
 
-        // Count referees server-side and fetch evaluations in parallel (zero full users collection scan)
-        const [refereesCountSnap, evaluationsSnapshot] = await Promise.all([
-          getCountFromServer(query(collection(db, 'users'), where('role', '==', 'referee'))),
-          getDocs(evaluationsQuery),
+        // Fetch pre-aggregated referee rollups, 7-day window evals, and top-50 recent evals in parallel
+        const [refereesSnap, weekEvalsSnap, recentEvalsSnap] = await Promise.all([
+          getDocs(refereesQuery),
+          getDocs(weekEvalsQuery),
+          getDocs(recentEvalsQuery),
         ]);
 
-        const refereesCount = refereesCountSnap.data().count;
+        const refereeMap = {};
+        let allScoreSum = 0;
+        let allEvalCount = 0;
+        const leaderboardCandidates = [];
 
-        // Collect only missing user IDs not already denormalized on evaluation docs
+        refereesSnap.forEach((uDoc) => {
+          const rData = uDoc.data();
+          refereeMap[uDoc.id] = rData;
+
+          const count = typeof rData.evaluationsCount === 'number' ? rData.evaluationsCount : 0;
+          const sum = typeof rData.totalScoreSum === 'number' ? rData.totalScoreSum : 0;
+
+          if (count > 0) {
+            allEvalCount += count;
+            allScoreSum += sum;
+            if (rData.status !== 'Disabled') {
+              leaderboardCandidates.push({
+                name: rData.displayName || rData.name || 'Unknown',
+                avg: sum / count,
+                count,
+              });
+            }
+          }
+        });
+
+        const refereesCount = refereesSnap.size;
+        const averageScore = allEvalCount > 0 ? (allScoreSum / allEvalCount).toFixed(1) : '0.0';
+        const topReferees = leaderboardCandidates
+          .sort((a, b) => (b.avg - a.avg) || (b.count - a.count))
+          .slice(0, 3)
+          .map((r) => r.name);
+
+        // Collect only missing evaluator or non-referee IDs not already in refereeMap
         const missingUserIds = new Set();
-        evaluationsSnapshot.docs.forEach((docSnap) => {
+        recentEvalsSnap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const rId = data.refereeId || (Array.isArray(data.refereeIds) ? data.refereeIds[0] : null);
           const eId = data.evaluatorId;
@@ -90,15 +132,15 @@ const AdminDashboardPage = () => {
             data.evaluatorName !== 'Unknown'
           );
 
-          if (!hasRefName && rId && !String(rId).startsWith('official_')) {
+          if (!hasRefName && rId && !String(rId).startsWith('official_') && !refereeMap[rId]) {
             missingUserIds.add(rId);
           }
-          if (!hasEvalName && eId) {
+          if (!hasEvalName && eId && !refereeMap[eId]) {
             missingUserIds.add(eId);
           }
         });
 
-        const userMap = {};
+        const userMap = { ...refereeMap };
         const missingIds = Array.from(missingUserIds);
         if (missingIds.length > 0) {
           const chunks = [];
@@ -117,7 +159,7 @@ const AdminDashboardPage = () => {
           });
         }
 
-        const evaluationsData = evaluationsSnapshot.docs.map((docSnap) => {
+        const evaluationsData = recentEvalsSnap.docs.map((docSnap) => {
           const data = docSnap.data();
           const rId = data.refereeId || (Array.isArray(data.refereeIds) ? data.refereeIds[0] : null);
           const referee = rId ? userMap[rId] : null;
@@ -130,79 +172,69 @@ const AdminDashboardPage = () => {
             totalScore = getOfficialTotalScore(off0Scores);
           }
 
+          const resolvedRefereeName =
+            (Array.isArray(data.refereeNames) && data.refereeNames.length > 0
+              ? data.refereeNames.join(', ')
+              : null) ||
+            (Array.isArray(data.officials) && data.officials.length > 1
+              ? data.officials.map((o) => o?.name).filter(Boolean).join(', ')
+              : null) ||
+            data.refereeName ||
+            referee?.displayName ||
+            'Unknown';
+
+          const officialCount =
+            (Array.isArray(data.officials) && data.officials.length > 1 ? data.officials.length : 0) ||
+            (Array.isArray(data.refereeIds) && data.refereeIds.length > 1 ? data.refereeIds.length : 1);
+
           return {
             id: docSnap.id,
             ...data,
             totalScore,
-            refereeName: referee?.displayName || data.refereeName || (Array.isArray(data.refereeNames) ? data.refereeNames[0] : 'Unknown'),
+            maxScore: data.maxScore || (officialCount * 40),
+            refereeName: resolvedRefereeName,
             evaluatorName: evaluator?.displayName || data.evaluatorName || 'Unknown',
-            tier: referee?.tier || data.tier || 'N/A',
+            tier: normalizeTier(data.tier) || referee?.tier || 'N/A',
             createdAtDate: data.createdAt ? new Date(data.createdAt.seconds * 1000) : new Date(),
           };
         });
 
-        const evaluationsCount = evaluationsData.length;
+        const evaluationsThisWeek = weekEvalsSnap.size;
 
-        // Calculate Average Score
-        const totalScore = evaluationsData.reduce((acc, cur) => acc + (cur.totalScore || 0), 0);
-        const averageScore = evaluationsCount > 0 ? (totalScore / evaluationsCount).toFixed(1) : '0.0';
+        // Bucket 7-day chart by local YYYY-MM-DD so rolling windows never collide on weekdays
+        const formatDayKey = (d) => {
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        };
 
-        // Calculate Top Tier Officials (Dynamic, includes group evaluations)
-        const refStats = {};
-        evaluationsData.forEach(ev => {
-          const officials = getEvaluationOfficials(ev);
-          officials.forEach(off => {
-            const rId = off.id;
-            if (!rId || rId.startsWith('official_')) {
-              if (ev.refereeId) {
-                const id = ev.refereeId;
-                if (!refStats[id]) refStats[id] = { total: 0, count: 0, name: ev.refereeName };
-                refStats[id].total += (ev.totalScore || 0);
-                refStats[id].count += 1;
-              }
-              return;
-            }
-            if (!refStats[rId]) refStats[rId] = { total: 0, count: 0, name: off.name };
-            const score = getOfficialTotalScore(getScoresForReferee(ev, rId)) || ev.totalScore || 0;
-            refStats[rId].total += score;
-            refStats[rId].count += 1;
-          });
-        });
-
-        const topReferees = Object.values(refStats)
-          .map(stat => ({ name: stat.name, avg: stat.total / stat.count }))
-          .sort((a, b) => b.avg - a.avg)
-          .slice(0, 3)
-          .map(r => r.name);
-
-
-        // Calculate Evaluations This Week
-        const now = new Date();
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const evaluationsThisWeek = evaluationsData.filter(ev => ev.createdAtDate >= oneWeekAgo).length;
-
-        // 3. Process Chart Data (Last 7 Days)
-        const days = {};
+        const dayBuckets = new Map();
         for (let i = 6; i >= 0; i--) {
           const d = new Date();
+          d.setHours(0, 0, 0, 0);
           d.setDate(d.getDate() - i);
-          const key = d.toLocaleDateString('en-US', { weekday: 'short' });
-          days[key] = 0;
+          dayBuckets.set(formatDayKey(d), {
+            day: d.toLocaleDateString('en-US', { weekday: 'short' }),
+            evaluations: 0,
+          });
         }
 
-        evaluationsData.forEach((ev) => {
-          const date = ev.createdAtDate;
-          const key = date.toLocaleDateString('en-US', { weekday: 'short' });
-
-          if (Object.prototype.hasOwnProperty.call(days, key) && date >= oneWeekAgo) {
-            days[key]++;
+        weekEvalsSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const date = data.createdAt?.toDate
+            ? data.createdAt.toDate()
+            : data.createdAt?.seconds
+            ? new Date(data.createdAt.seconds * 1000)
+            : null;
+          if (!date) return;
+          const bucket = dayBuckets.get(formatDayKey(date));
+          if (bucket) {
+            bucket.evaluations += 1;
           }
         });
 
-        const newChartData = Object.keys(days).map((day) => ({
-          day,
-          evaluations: days[day],
-        }));
+        const newChartData = Array.from(dayBuckets.values());
 
         // Build stats array for both setState and cache
         const newStats = [
@@ -340,7 +372,7 @@ const AdminDashboardPage = () => {
                     </div>
                     <input
                       type='text'
-                      placeholder='Search evaluations...'
+                      placeholder='Search recent evaluations...'
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className='w-full bg-[#1a1a1a] border border-[#3a3a3a] text-white placeholder-[#6b7280] rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0ea5e9] transition-all'
@@ -397,7 +429,7 @@ const AdminDashboardPage = () => {
                                   {evaluation.refereeName}
                                 </td>
                                 <td className='py-3 lg:py-4 px-2 lg:px-4 text-fluid-base text-white text-body font-medium whitespace-nowrap'>
-                                  {evaluation.totalScore}/40
+                                  {evaluation.totalScore}/{evaluation.maxScore || 40}
                                 </td>
                                 <td className='py-3 lg:py-4 px-2 lg:px-4'>
                                   <span
