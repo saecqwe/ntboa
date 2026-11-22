@@ -4,6 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { setEvaluationPublished } from '@/features/evaluator/services/evaluationService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { safeGoBack } from '@/lib/navigationHistory';
@@ -32,12 +34,14 @@ const EvaluationDetailPage = () => {
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
+  const { user } = useAuth();
   const cachedData = params?.id ? globalEvaluationDetailCache.get(params.id) : null;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [evaluation, setEvaluation] = useState(() => cachedData?.evaluation || null);
   const [loading, setLoading] = useState(() => !cachedData);
   const [isEditing, setIsEditing] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [editForm, setEditForm] = useState(() => cachedData?.editForm || null);
   const [activeOfficialIndex, setActiveOfficialIndex] = useState(0);
 
@@ -87,6 +91,7 @@ const EvaluationDetailPage = () => {
           const formattedEvaluation = {
             id: evalDoc.id,
             ...evalData,
+            isPublished: evalData.isPublished === true,
             rawScores,
             rawComments,
             date: evalData.createdAt ? new Date(evalData.createdAt.seconds * 1000).toLocaleDateString('en-US', {
@@ -335,6 +340,33 @@ const EvaluationDetailPage = () => {
     }
   };
 
+  const handleTogglePublish = async () => {
+    if (!evaluation || publishLoading) return;
+    const nextPublished = !evaluation.isPublished;
+    setPublishLoading(true);
+    try {
+      await setEvaluationPublished(params.id, nextPublished, user?.uid);
+      const updatedEval = { ...evaluation, isPublished: nextPublished };
+      setEvaluation(updatedEval);
+      if (editForm) {
+        globalEvaluationDetailCache.set(params.id, {
+          evaluation: updatedEval,
+          editForm: { ...editForm },
+        });
+      }
+      toast.success(
+        nextPublished
+          ? 'Evaluation published! The referee can now view it.'
+          : 'Evaluation unpublished and hidden from the referee.'
+      );
+    } catch (error) {
+      console.error('Error toggling publish status:', error);
+      toast.error(error?.message || 'Failed to update publish status.');
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
   if (loading) {
     return <EvaluationDetailSkeleton />;
   }
@@ -360,7 +392,7 @@ const EvaluationDetailPage = () => {
       {/* Main Content */}
       <main className='flex-1 lg:ml-64'>
         {/* Header */}
-        <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center justify-between gap-4'>
+        <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex flex-wrap items-center justify-between gap-4'>
           <div className='flex items-center gap-4'>
             <BackButton variant='solid' className='shrink-0' />
             {/* Hamburger Menu - Mobile Only */}
@@ -376,7 +408,28 @@ const EvaluationDetailPage = () => {
             </h1>
           </div>
 
-          <div className='flex gap-2'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                evaluation.isPublished
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+              }`}
+            >
+              {evaluation.isPublished ? 'Published' : 'Unpublished'}
+            </span>
+            <button
+              type='button'
+              onClick={handleTogglePublish}
+              disabled={publishLoading || isEditing}
+              className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                evaluation.isPublished
+                  ? 'bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white border border-[#4a4a4a]'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              }`}
+            >
+              {publishLoading ? 'Updating...' : evaluation.isPublished ? 'Unpublish' : 'Publish'}
+            </button>
             {isEditing ? (
               <>
                 <button

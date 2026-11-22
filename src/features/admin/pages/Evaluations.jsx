@@ -4,9 +4,12 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy, limit, where, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { setEvaluationPublished } from '@/features/evaluator/services/evaluationService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar, HiChevronUp, HiSelector, HiChevronRight } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import toast, { Toaster } from 'react-hot-toast';
 
 import {
   OFFICIAL_CATEGORIES,
@@ -57,6 +60,7 @@ const getTierColor = (tier) => {
 
 const EvaluationsPage = () => {
   const router = useRouter();
+  const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTier, setSelectedTier] = useState('All Tiers');
@@ -66,6 +70,7 @@ const EvaluationsPage = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEvaluation, setSelectedEvaluation] = useState(null);
   const [modalActiveTab, setModalActiveTab] = useState(0);
+  const [publishLoading, setPublishLoading] = useState(false);
 
   // Initialize from module-level cache for instant tab switch renders
   const [evaluations, setEvaluations] = useState(() => globalEvaluationsCache.evaluations);
@@ -193,6 +198,7 @@ const EvaluationsPage = () => {
           return {
             id: evalDoc.id,
             ...evaluation,
+            isPublished: evaluation.isPublished === true,
             totalScore,
             refereeName: refName,
             evaluatorName: evalName,
@@ -258,6 +264,38 @@ const EvaluationsPage = () => {
     setShowDetailModal(false);
     setSelectedEvaluation(null);
     setModalActiveTab(0);
+  };
+
+  const handleTogglePublish = async (targetEval) => {
+    if (!targetEval || publishLoading) return;
+    const nextPublished = !targetEval.isPublished;
+    setPublishLoading(true);
+    try {
+      await setEvaluationPublished(targetEval.id, nextPublished, user?.uid);
+      setEvaluations((prev) => {
+        const updatedList = prev.map((ev) =>
+          ev.id === targetEval.id ? { ...ev, isPublished: nextPublished } : ev
+        );
+        globalEvaluationsCache = {
+          ...globalEvaluationsCache,
+          evaluations: updatedList,
+        };
+        return updatedList;
+      });
+      setSelectedEvaluation((prev) =>
+        prev && prev.id === targetEval.id ? { ...prev, isPublished: nextPublished } : prev
+      );
+      toast.success(
+        nextPublished
+          ? 'Evaluation published! The referee can now view it.'
+          : 'Evaluation unpublished and hidden from the referee.'
+      );
+    } catch (error) {
+      console.error('Error toggling publish status:', error);
+      toast.error(error?.message || 'Failed to update publish status.');
+    } finally {
+      setPublishLoading(false);
+    }
   };
 
   // Filter evaluations
@@ -353,6 +391,7 @@ const EvaluationsPage = () => {
 
   return (
     <div className='flex min-h-screen bg-[#1a1a1a] overflow-x-hidden'>
+      <Toaster position='top-right' />
       {/* Sidebar */}
       <AdminSidebar
         isOpen={sidebarOpen}
@@ -646,11 +685,22 @@ const EvaluationsPage = () => {
                             {evaluation.totalScore}
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
-                            <span
-                              className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${evaluation.tierColor}`}
-                            >
-                              {evaluation.tier}
-                            </span>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              <span
+                                className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${evaluation.tierColor}`}
+                              >
+                                {evaluation.tier}
+                              </span>
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${
+                                  evaluation.isPublished
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                }`}
+                              >
+                                {evaluation.isPublished ? 'Published' : 'Unpublished'}
+                              </span>
+                            </div>
                           </td>
                           <td className='py-4 px-4 lg:px-6'>
                             <span className='text-fluid-base text-[#ef4444] font-medium'>
@@ -686,16 +736,27 @@ const EvaluationsPage = () => {
                     onClick={() => handleViewEvaluation(evaluation)}
                     className='group bg-[#242424] hover:bg-[#2a2a2a] border border-[#3a3a3a] hover:border-accent/40 rounded-2xl p-4 transition-all duration-150 cursor-pointer shadow-sm active:scale-[0.99]'
                   >
-                    {/* Card Top Row: Date on left, Tier badge on right */}
+                    {/* Card Top Row: Date on left, Status & Tier badges on right */}
                     <div className='flex items-center justify-between gap-2'>
                       <span className='text-xs font-medium text-[#9ca3af]'>
                         {evaluation.createdAtDate ? evaluation.createdAtDate.toLocaleDateString() : 'N/A'}
                       </span>
-                      <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${evaluation.tierColor}`}
-                      >
-                        {evaluation.tier}
-                      </span>
+                      <div className='flex items-center gap-1.5'>
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${
+                            evaluation.isPublished
+                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          }`}
+                        >
+                          {evaluation.isPublished ? 'Published' : 'Unpublished'}
+                        </span>
+                        <span
+                          className={`inline-block px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${evaluation.tierColor}`}
+                        >
+                          {evaluation.tier}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Card Body: Official Name bold white, Evaluator directly underneath */}
@@ -799,11 +860,22 @@ const EvaluationsPage = () => {
                 <>
                   {/* Header */}
                   <div className='bg-accent rounded-t-[20px] px-6 py-5'>
-                    <h2 className='text-fluid-3xl font-bold text-white heading mb-2'>
-                      {modalOfficials.length > 1
-                        ? `${activeOfficial.name} (Official ${modalActiveTab + 1} of ${modalOfficials.length})`
-                        : (activeOfficial.name || selectedEvaluation.refereeName || 'Evaluation')}
-                    </h2>
+                    <div className='flex flex-wrap items-center justify-between gap-2 mb-2'>
+                      <h2 className='text-fluid-3xl font-bold text-white heading'>
+                        {modalOfficials.length > 1
+                          ? `${activeOfficial.name} (Official ${modalActiveTab + 1} of ${modalOfficials.length})`
+                          : (activeOfficial.name || selectedEvaluation.refereeName || 'Evaluation')}
+                      </h2>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                          selectedEvaluation.isPublished
+                            ? 'bg-emerald-950/50 text-emerald-200 border-emerald-300/40'
+                            : 'bg-amber-950/50 text-amber-200 border-amber-300/40'
+                        }`}
+                      >
+                        {selectedEvaluation.isPublished ? 'Published' : 'Unpublished'}
+                      </span>
+                    </div>
                     <p className='text-fluid-base text-white/90 text-body'>
                       {selectedEvaluation.createdAtDate ? selectedEvaluation.createdAtDate.toLocaleDateString() : 'N/A'} • Evaluator: {selectedEvaluation.evaluatorName}
                     </p>
@@ -964,14 +1036,32 @@ const EvaluationsPage = () => {
               );
             })()}
 
-            <div className='px-6 pb-6 pt-0 flex gap-3'>
+            <div className='px-6 pb-6 pt-0 flex flex-col sm:flex-row gap-3'>
               <button
+                type='button'
                 onClick={handleCloseModal}
                 className='flex-1 bg-[#2a2a2a] hover:bg-[#333333] border border-[#3a3a3a] text-white px-6 py-3 rounded-lg font-medium transition-all text-fluid-lg cursor-pointer'
               >
                 Close
               </button>
               <button
+                type='button'
+                onClick={() => handleTogglePublish(selectedEvaluation)}
+                disabled={publishLoading}
+                className={`flex-1 px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg cursor-pointer disabled:opacity-60 ${
+                  selectedEvaluation.isPublished
+                    ? 'bg-[#3a3a3a] hover:bg-[#4a4a4a] text-white border border-[#4a4a4a]'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                {publishLoading
+                  ? 'Updating...'
+                  : selectedEvaluation.isPublished
+                  ? 'Unpublish'
+                  : 'Publish'}
+              </button>
+              <button
+                type='button'
                 onClick={() => router.push(`/admin/evaluations/${selectedEvaluation.id}`)}
                 className='flex-1 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all text-fluid-lg cursor-pointer'
               >

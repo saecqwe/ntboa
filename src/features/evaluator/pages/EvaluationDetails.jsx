@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
-import { getEvaluationById } from '@/features/evaluator/services/evaluationService';
+import { getEvaluationById, setEvaluationPublished } from '@/features/evaluator/services/evaluationService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { safeGoBack } from '@/lib/navigationHistory';
 import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
+import toast, { Toaster } from 'react-hot-toast';
 import {
   OFFICIAL_CATEGORIES,
   getEvaluationOfficials,
@@ -31,6 +32,7 @@ const EvaluationDetailsPage = () => {
   const [loading, setLoading] = useState(() => !cachedData);
   const [error, setError] = useState(null);
   const [activeOfficialTab, setActiveOfficialTab] = useState(0);
+  const [publishLoading, setPublishLoading] = useState(false);
 
   useEffect(() => {
     const fetchEvaluation = async () => {
@@ -74,6 +76,29 @@ const EvaluationDetailsPage = () => {
   const calculatedTotal = getOfficialTotalScore(activeScores);
   const activeTotalScore = calculatedTotal || evaluation?.totalScore || 0;
   const activeCategories = resolveActiveCategories(activeScores);
+  const canTogglePublish = Boolean(user && evaluation?.evaluatorId === user.uid);
+
+  const handleTogglePublish = async () => {
+    if (!evaluation || !canTogglePublish || publishLoading) return;
+    const nextPublished = !evaluation.isPublished;
+    setPublishLoading(true);
+    try {
+      await setEvaluationPublished(evaluation.id, nextPublished, user.uid);
+      const updated = { ...evaluation, isPublished: nextPublished };
+      setEvaluation(updated);
+      globalEvaluatorEvalDetailCache.set(evaluation.id, updated);
+      toast.success(
+        nextPublished
+          ? 'Evaluation published! The referee can now view it.'
+          : 'Evaluation unpublished and hidden from the referee.'
+      );
+    } catch (err) {
+      console.error('Error toggling evaluation publish state:', err);
+      toast.error(err?.message || 'Failed to update publish status.');
+    } finally {
+      setPublishLoading(false);
+    }
+  };
 
   if (loading) {
     return <EvaluationDetailSkeleton />;
@@ -109,6 +134,7 @@ const EvaluationDetailsPage = () => {
 
   return (
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
+      <Toaster position='top-right' />
       <EvaluatorHeader showBackButton={true} />
 
       <div className='flex-1 bg-[#181818]'>
@@ -126,6 +152,36 @@ const EvaluationDetailsPage = () => {
                 <h3 className='text-[20px] lg:text-[22px] font-semibold text-white text-body mb-2'>
                   {activeOfficial.name || evaluation.referee?.name}
                 </h3>
+
+                <div className='flex flex-wrap items-center justify-center gap-2.5 mb-3'>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                      evaluation.isPublished
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    }`}
+                  >
+                    {evaluation.isPublished ? 'Published' : 'Unpublished (Hidden from Referee)'}
+                  </span>
+                  {canTogglePublish && (
+                    <button
+                      type='button'
+                      onClick={handleTogglePublish}
+                      disabled={publishLoading}
+                      className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer disabled:opacity-60 ${
+                        evaluation.isPublished
+                          ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      }`}
+                    >
+                      {publishLoading
+                        ? 'Updating...'
+                        : evaluation.isPublished
+                        ? 'Unpublish'
+                        : 'Publish to Referee'}
+                    </button>
+                  )}
+                </div>
 
                 <div className='flex flex-col gap-1 mb-3'>
                   <p className='text-[15px] text-white font-medium'>

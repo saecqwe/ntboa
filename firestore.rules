@@ -33,6 +33,9 @@ service cloud.firestore {
     //   - evaluatorId: string (required on evaluator create == request.auth.uid, immutable for evaluators)
     //   - refereeId: string (optional, single-official evaluation)
     //   - refereeIds: list (optional, group evaluation)
+    //   - isPublished: bool (required == false on evaluator create; optional bool on admin create and admin/evaluator update; required == true for referee reads)
+    //   - publishedAt: timestamp | null (optional, set when published or cleared to null when unpublished)
+    //   - publishedBy: string | null (optional, UID of publishing actor or null; evaluators cannot spoof another user's UID)
     //   - scores, totalScore, maxScore, tier, comments, groupComment, isGroup, officials, gameDate, location, createdAt, recommendations
     //
     // Collection: assignments
@@ -173,26 +176,38 @@ service cloud.firestore {
     // EVALUATIONS COLLECTION
     match /evaluations/{evaluationId} {
       // Admins can read all evaluations
-      // Evaluators can read evaluations they conducted
-      // Referees can read evaluations in which they were evaluated
+      // Evaluators can read evaluations they conducted (published and unpublished)
+      // Referees can ONLY read published evaluations in which they were evaluated
       allow read: if isAuthenticated() && (
         isAdmin() ||
         resource.data.evaluatorId == request.auth.uid ||
-        resource.data.refereeId == request.auth.uid ||
-        (resource.data.refereeIds is list && request.auth.uid in resource.data.refereeIds)
+        (
+          (
+            resource.data.refereeId == request.auth.uid ||
+            (resource.data.refereeIds is list && request.auth.uid in resource.data.refereeIds)
+          ) &&
+          resource.data.isPublished == true
+        )
       );
 
-      // Only Admins or the assigning Evaluator can create/update evaluations
+      // Admins can create evaluations (optional bool isPublished); Evaluators must create unpublished (isPublished == false)
       allow create: if isAuthenticated() && (
-        isAdmin() ||
-        (isEvaluator() && request.resource.data.evaluatorId == request.auth.uid)
+        (isAdmin() && (!('isPublished' in request.resource.data) || request.resource.data.isPublished is bool)) ||
+        (isEvaluator() &&
+         request.resource.data.evaluatorId == request.auth.uid &&
+         request.resource.data.isPublished == false)
       );
 
+      // Admins and the conducting Evaluator can update evaluations and toggle publish state without spoofing evaluatorId or publishedBy
       allow update: if isAuthenticated() && (
-        isAdmin() ||
+        (isAdmin() && (!('isPublished' in request.resource.data) || request.resource.data.isPublished is bool)) ||
         (isEvaluator() &&
          resource.data.evaluatorId == request.auth.uid &&
-         request.resource.data.evaluatorId == resource.data.evaluatorId)
+         request.resource.data.evaluatorId == resource.data.evaluatorId &&
+         (!('isPublished' in request.resource.data) || request.resource.data.isPublished is bool) &&
+         (!('publishedBy' in request.resource.data.diff(resource.data).affectedKeys()) ||
+          request.resource.data.publishedBy == null ||
+          request.resource.data.publishedBy == request.auth.uid))
       );
 
       // Only Admins can delete evaluations

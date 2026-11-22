@@ -200,6 +200,7 @@ const EvaluationReviewContent = () => {
         comments: comments || {},
         groupComment: groupComment || '',
         isGroup: officials.length > 1,
+        isPublished: false,
         officials: officialsPayload,
         gameDate: official?.date || new Date().toISOString(),
         location: gameLocation || official?.location || 'N/A',
@@ -238,7 +239,7 @@ const EvaluationReviewContent = () => {
         } catch {}
       }
 
-      alert('Evaluation submitted successfully!');
+      alert('Evaluation submitted as unpublished! You or an Admin can publish it from Evaluation Details when ready for the referee to see.');
       router.push('/evaluator/home');
     } catch (error) {
       console.error('Error submitting evaluation:', error);

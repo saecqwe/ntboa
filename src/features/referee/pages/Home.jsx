@@ -81,14 +81,16 @@ const RefereeDashboardPage = () => {
       setLoading(false);
     });
 
-    // ── Real-time listener: Evaluations (supports both single & group crew evals) ─
+    // ── Real-time listener: Evaluations (published only; supports single & group crew evals) ─
     const qEvalsSingle = query(
       collection(db, 'evaluations'),
-      where('refereeId', '==', userData.uid)
+      where('refereeId', '==', userData.uid),
+      where('isPublished', '==', true)
     );
     const qEvalsGroup = query(
       collection(db, 'evaluations'),
-      where('refereeIds', 'array-contains', userData.uid)
+      where('refereeIds', 'array-contains', userData.uid),
+      where('isPublished', '==', true)
     );
 
     let singleMap = new Map();

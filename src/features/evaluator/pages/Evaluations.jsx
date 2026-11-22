@@ -107,14 +107,25 @@ const EvaluationsPage = () => {
                         {/* Vertical Divider */}
                         <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4'></div>
 
-                        {/* Right Side - Score and Tier */}
-                        <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px]'>
-                          <div className='text-base text-white heading leading-none'>
-                            {evaluation.totalScore}/{evaluation.maxScore || 40}
+                        {/* Right Side - Score, Tier, and Publish Status */}
+                        <div className='flex flex-col items-end gap-1.5 min-w-[90px] lg:min-w-[110px]'>
+                          <div className='flex items-center gap-2'>
+                            <div className='text-base text-white heading leading-none'>
+                              {evaluation.totalScore}/{evaluation.maxScore || 40}
+                            </div>
+                            <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
+                              {evaluation.tier || 'N/A'}
+                            </div>
                           </div>
-                          <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
-                            {evaluation.tier || 'N/A'}
-                          </div>
+                          <span
+                            className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
+                              evaluation.isPublished
+                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                            }`}
+                          >
+                            {evaluation.isPublished ? 'Published' : 'Unpublished'}
+                          </span>
                         </div>
                       </Link>
                     ))}

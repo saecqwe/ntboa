@@ -463,6 +463,10 @@ exports.migrateDatabaseSchema = https.onCall(async (data, context) => {
         }
       }
 
+      if (typeof ev.isPublished !== 'boolean') {
+        updates.isPublished = true;
+      }
+
       if (Object.keys(updates).length > 0) {
         batch.set(evalRef, updates, { merge: true });
         opCount++;

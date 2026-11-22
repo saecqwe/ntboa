@@ -1,5 +1,5 @@
 import { db } from '@/services/firebase/config';
-import { doc, getDoc, collection, query, where, getDocs, limit, orderBy, startAfter, documentId } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, limit, orderBy, startAfter, documentId } from 'firebase/firestore';
 import { getScoresForOfficial, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 /**
@@ -89,6 +89,7 @@ export const getEvaluationById = async (evaluationId) => {
     return {
       id: docSnap.id,
       ...data,
+      isPublished: data.isPublished === true,
       totalScore,
       referee,
       evaluator,
@@ -165,6 +166,7 @@ export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = null, 
       return {
         id: docSnap.id,
         ...data,
+        isPublished: data.isPublished === true,
         totalScore,
         refereeName: refereeName || 'Unknown',
         maxScore: data.maxScore || 40,
@@ -204,4 +206,18 @@ export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = null, 
     console.error('Error fetching evaluations:', error);
     throw error;
   }
+};
+
+/**
+ * Publishes or unpublishes an evaluation for referee visibility.
+ * Admin stats and rosters include all evaluations; referee views filter by `isPublished == true`.
+ */
+export const setEvaluationPublished = async (evaluationId, isPublished, actorUid = null) => {
+  const nextPublished = Boolean(isPublished);
+  await updateDoc(doc(db, 'evaluations', evaluationId), {
+    isPublished: nextPublished,
+    publishedAt: nextPublished ? serverTimestamp() : null,
+    publishedBy: nextPublished ? actorUid : null,
+  });
+  return nextPublished;
 };
