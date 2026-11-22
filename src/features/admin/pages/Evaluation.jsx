@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
+import { safeGoBack } from '@/lib/navigationHistory';
 import { HiMenu, HiArrowLeft, HiPencil, HiCheck, HiX } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
@@ -30,6 +31,7 @@ const globalEvaluationDetailCache = new Map();
 const EvaluationDetailPage = () => {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const cachedData = params?.id ? globalEvaluationDetailCache.get(params.id) : null;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -341,7 +343,7 @@ const EvaluationDetailPage = () => {
     return (
       <div className='flex min-h-screen bg-[#1a1a1a] items-center justify-center flex-col gap-4'>
         <div className='text-white text-xl'>Evaluation not found.</div>
-        <button onClick={() => router.back()} className='text-accent hover:underline'>Go Back</button>
+        <button type='button' onClick={() => safeGoBack(router, pathname, '/admin/evaluations')} className='text-accent hover:underline cursor-pointer'>Go Back</button>
       </div>
     );
   }
@@ -701,7 +703,8 @@ const EvaluationDetailPage = () => {
 
             {/* Back Button */}
             <button
-              onClick={() => router.back()}
+              type='button'
+              onClick={() => safeGoBack(router, pathname, '/admin/evaluations')}
               className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body cursor-pointer'
             >
               <HiArrowLeft className='w-5 h-5' />

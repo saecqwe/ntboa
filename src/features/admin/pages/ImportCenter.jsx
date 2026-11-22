@@ -6,7 +6,6 @@ import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp
 import { db } from '@/services/firebase/config';
 import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import {
     HiMenu,
     HiUpload,
@@ -355,7 +354,6 @@ const ImportCenterPage = () => {
 
             <div className='flex-1 lg:ml-64 min-w-0 overflow-x-hidden'>
                 <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 lg:px-8 py-4 lg:py-6 flex items-center gap-4'>
-                    <BackButton variant='solid' className='shrink-0' />
                     <button onClick={() => setIsSidebarOpen(true)} className='lg:hidden text-white hover:bg-white/10 p-2 rounded-lg'>
                         <HiMenu className='w-6 h-6' />
                     </button>

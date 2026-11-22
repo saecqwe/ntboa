@@ -188,7 +188,7 @@ const EvaluatorHome = () => {
       <EvaluatorHeader
         userName={userData.name}
         userInitials={userData.initials}
-        showBackButton={true}
+        showBackButton={false}
       />
 
       <div className='bg-gradient-primary rounded-tl-[60px] overflow-hidden'>

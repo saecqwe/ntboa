@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, limit, orderBy, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { HiOutlineUsers, HiOutlineDocumentText, HiMenu, HiOutlineSearch } from 'react-icons/hi';
 import { HiStar } from 'react-icons/hi2';
 import { FaTrophy } from 'react-icons/fa';
@@ -288,7 +287,6 @@ const AdminDashboardPage = () => {
       <main className='flex-1 lg:ml-64'>
         {/* Header */}
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center gap-3'>
-          <BackButton variant='solid' className='shrink-0' />
           {/* Hamburger Menu - Mobile Only */}
           <button
             onClick={() => setSidebarOpen(true)}

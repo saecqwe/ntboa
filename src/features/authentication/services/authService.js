@@ -4,6 +4,7 @@ import { auth, db, functions, firebaseConfig } from '@/services/firebase/config'
 import { httpsCallable } from 'firebase/functions';
 import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut as signOutSecondary } from 'firebase/auth';
+import { resetInAppHistory } from '@/lib/navigationHistory';
 
 // Re-exporting for convenience, in case other services need them
 export { auth, db };
@@ -34,6 +35,7 @@ export const logout = async () => {
       keysToRemove.forEach((key) => localStorage.removeItem(key));
       sessionStorage.removeItem('ntboa_pending_eval');
       sessionStorage.clear();
+      resetInAppHistory();
     } catch (storageErr) {
       console.warn("Storage cleanup error on logout:", storageErr);
     }

@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { IoArrowBack } from 'react-icons/io5';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { safeGoBack } from '@/lib/navigationHistory';
 
 const VARIANT_STYLES = {
   light:
@@ -13,17 +14,19 @@ const VARIANT_STYLES = {
 
 const BackButton = ({
   href,
+  fallbackHref,
   ariaLabel = 'Go back',
   className = '',
   variant = 'light',
 }) => {
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleClick = () => {
     if (href) {
       router.push(href);
     } else {
-      router.back();
+      safeGoBack(router, pathname, fallbackHref);
     }
   };
 

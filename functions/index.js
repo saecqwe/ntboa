@@ -150,6 +150,127 @@ exports.suspendUser = https.onCall(async (data, context) => {
 });
 
 /**
+ * Admin-only callable to update a Referee's or Evaluator's login email
+ * across both Firebase Authentication and Firestore, with rollback protection
+ * and active session revocation.
+ */
+exports.updateUserEmail = https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new https.HttpsError('unauthenticated', 'Must be authenticated to update user email.');
+  }
+
+  const rawUid = data?.uid;
+  const rawEmail = data?.newEmail;
+  if (typeof rawUid !== 'string' || !rawUid.trim()) {
+    throw new https.HttpsError('invalid-argument', 'A valid user "uid" is required.');
+  }
+  if (typeof rawEmail !== 'string' || !rawEmail.trim()) {
+    throw new https.HttpsError('invalid-argument', 'A valid "newEmail" is required.');
+  }
+
+  const uid = rawUid.trim();
+  const normalizedEmail = rawEmail.trim().toLowerCase();
+  if (normalizedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new https.HttpsError('invalid-argument', 'Please provide a valid email address.');
+  }
+
+  const [callerDoc, targetDoc] = await Promise.all([
+    db.collection('users').doc(context.auth.uid).get(),
+    db.collection('users').doc(uid).get(),
+  ]);
+
+  if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+    throw new https.HttpsError('permission-denied', 'Only administrators can update user email addresses.');
+  }
+  if (!targetDoc.exists) {
+    throw new https.HttpsError('not-found', 'User profile not found.');
+  }
+
+  const targetData = targetDoc.data();
+  if (targetData.role !== 'referee' && targetData.role !== 'evaluator') {
+    throw new https.HttpsError('permission-denied', 'Email updates are restricted to referee and evaluator accounts.');
+  }
+  if (targetData.status === 'Disabled') {
+    throw new https.HttpsError('failed-precondition', 'Cannot change email for a disabled account.');
+  }
+
+  let authUser;
+  try {
+    authUser = await auth.getUser(uid);
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') {
+      throw new https.HttpsError('not-found', 'Authentication account not found for this user.');
+    }
+    logger.error(`Error fetching Auth user ${uid}:`, error);
+    throw new https.HttpsError('internal', 'Failed to verify authentication account.');
+  }
+
+  const previousAuthEmail = authUser.email || '';
+  if (
+    previousAuthEmail.toLowerCase() === normalizedEmail &&
+    String(targetData.email || '').trim().toLowerCase() === normalizedEmail
+  ) {
+    return {
+      status: 'unchanged',
+      email: normalizedEmail,
+      message: 'Email is already set to this value.',
+    };
+  }
+
+  const authNeedsUpdate = previousAuthEmail.toLowerCase() !== normalizedEmail;
+  if (authNeedsUpdate) {
+    try {
+      await auth.updateUser(uid, { email: normalizedEmail });
+    } catch (authError) {
+      logger.error(`Failed to update Auth email for ${uid}:`, authError);
+      if (authError?.code === 'auth/email-already-exists') {
+        throw new https.HttpsError('already-exists', 'That email address is already in use by another account.');
+      }
+      if (authError?.code === 'auth/invalid-email') {
+        throw new https.HttpsError('invalid-argument', 'The provided email address is invalid.');
+      }
+      if (authError?.code === 'auth/user-not-found') {
+        throw new https.HttpsError('not-found', 'Authentication account not found.');
+      }
+      throw new https.HttpsError('internal', 'Failed to update authentication email.');
+    }
+  }
+
+  try {
+    await db.collection('users').doc(uid).update({
+      email: normalizedEmail,
+      previousEmail: targetData.email || previousAuthEmail,
+      emailUpdatedAt: FieldValue.serverTimestamp(),
+      emailUpdatedBy: context.auth.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  } catch (fsError) {
+    logger.error(`Failed to update Firestore email for user ${uid}:`, fsError);
+    if (authNeedsUpdate && previousAuthEmail) {
+      try {
+        await auth.updateUser(uid, { email: previousAuthEmail });
+      } catch (rollbackErr) {
+        logger.error(`CRITICAL: Failed to roll back Auth email for user ${uid}:`, rollbackErr);
+      }
+    }
+    throw new https.HttpsError('internal', 'Failed to update user profile email. Changes were rolled back.');
+  }
+
+  try {
+    await auth.revokeRefreshTokens(uid);
+  } catch (revokeErr) {
+    logger.warn(`Failed to revoke refresh tokens after email change for ${uid}:`, revokeErr);
+  }
+
+  logger.info(`Admin ${context.auth.uid} updated email for user ${uid} (${targetData.role}).`);
+  return {
+    status: 'success',
+    email: normalizedEmail,
+    message: 'User email updated successfully.',
+  };
+});
+
+/**
  * Authoritative Firestore Trigger on `evaluations/{evaluationId}` writes.
  * Recomputes affected evaluator and referee stats inside per-user transactions
  * so retries, concurrent submissions, edits, and deletions stay 100% accurate.

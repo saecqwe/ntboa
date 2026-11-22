@@ -7,7 +7,6 @@ import { db, functions } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { createUser } from '@/features/authentication/services/authService';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronDown, HiCheck, HiChevronUp, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import TableRowSkeleton from '@/ui/skeletons/TableRowSkeleton';
@@ -47,6 +46,7 @@ const EvaluatorsPage = () => {
   const [editFormData, setEditFormData] = useState({
     id: '',
     fullName: '',
+    email: '',
   });
   const [editingEvaluator, setEditingEvaluator] = useState(null);
 
@@ -153,6 +153,7 @@ const EvaluatorsPage = () => {
     setEditFormData({
       id: evaluator.id,
       fullName: evaluator.displayName || '',
+      email: evaluator.email || '',
     });
     setShowEditModal(true);
   };
@@ -163,6 +164,7 @@ const EvaluatorsPage = () => {
     setEditFormData({
       id: '',
       fullName: '',
+      email: '',
     });
   };
 
@@ -179,16 +181,36 @@ const EvaluatorsPage = () => {
     if (!editingEvaluator) return;
     setActionLoading(true);
 
+    const nextEmail = (editFormData.email || '').trim().toLowerCase();
+    const currentEmail = (editingEvaluator.email || '').trim().toLowerCase();
+    const emailChanged =
+      editingEvaluator.status !== 'Disabled' &&
+      Boolean(nextEmail) &&
+      nextEmail !== currentEmail;
+
     try {
+      if (emailChanged) {
+        const updateUserEmailFn = httpsCallable(functions, 'updateUserEmail');
+        await updateUserEmailFn({
+          uid: editingEvaluator.id,
+          newEmail: nextEmail,
+        });
+      }
+
       const evaluatorRef = doc(db, 'users', editingEvaluator.id);
       await updateDoc(evaluatorRef, {
-        displayName: editFormData.fullName,
+        displayName: editFormData.fullName.trim(),
       });
-      toast.success("Evaluator updated successfully!");
+
+      toast.success(
+        emailChanged
+          ? 'Evaluator updated! Password is unchanged; they will sign in with the new email.'
+          : 'Evaluator updated successfully!'
+      );
       handleCloseEditModal();
     } catch (error) {
       console.error('Error updating evaluator:', error);
-      toast.error("Failed to update evaluator.");
+      toast.error(error?.message || 'Failed to update evaluator.');
     } finally {
       setActionLoading(false);
     }
@@ -297,7 +319,6 @@ const EvaluatorsPage = () => {
       <main className='flex-1 lg:ml-64 overflow-y-auto'>
         {/* Header */}
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center gap-4'>
-          <BackButton variant='solid' className='shrink-0' />
           {/* Hamburger Menu - Mobile Only */}
           <button
             onClick={() => setSidebarOpen(true)}
@@ -616,6 +637,28 @@ const EvaluatorsPage = () => {
                   required
                   className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a]'
                 />
+              </div>
+
+              {/* Email Address */}
+              <div className='mb-6'>
+                <label className='block text-white text-fluid-base text-body mb-2'>
+                  Email Address
+                </label>
+                <input
+                  type='email'
+                  name='email'
+                  value={editFormData.email}
+                  onChange={handleEditInputChange}
+                  placeholder='evaluator@example.com'
+                  required
+                  disabled={editingEvaluator?.status === 'Disabled'}
+                  className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a] disabled:opacity-50 disabled:cursor-not-allowed'
+                />
+                <p className='text-xs text-[#9ca3af] mt-1.5'>
+                  {editingEvaluator?.status === 'Disabled'
+                    ? 'Email cannot be changed for a disabled account.'
+                    : "The user's password stays the same, and they'll be asked to sign in again with the new email."}
+                </p>
               </div>
 
               {/* Buttons */}

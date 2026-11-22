@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { HiMenu, HiX, HiPlus, HiChevronUp, HiChevronDown, HiSearch, HiPencil } from 'react-icons/hi';
 import { FiUsers, FiUser, FiCalendar, FiClock, FiMapPin } from 'react-icons/fi';
 import EvaluationListSkeleton from '@/ui/skeletons/EvaluationListSkeleton';
@@ -847,7 +846,6 @@ const AssignmentsPage = () => {
 
       <div className='flex-1 lg:ml-64 min-w-0 overflow-x-hidden'>
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 lg:px-8 py-4 lg:py-6 flex items-center gap-4 sticky top-0 z-20'>
-          <BackButton variant='solid' className='shrink-0' />
           <button onClick={() => setIsSidebarOpen(true)} className='lg:hidden text-white hover:bg-white/10 rounded-lg p-2 shrink-0'>
             <HiMenu className='w-6 h-6' />
           </button>

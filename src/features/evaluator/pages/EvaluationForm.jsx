@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { IoMic, IoArrowBack, IoPeople } from 'react-icons/io5';
 import { HiPencil, HiCheck } from 'react-icons/hi';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
+import { safeGoBack } from '@/lib/navigationHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,7 @@ const RATING_OPTIONS = [1, 2, 3, 4, 5];
 const EvaluationFormContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { user } = useAuth();
 
   const [sessionDraft] = useState(() => {
@@ -580,8 +582,9 @@ const EvaluationFormContent = () => {
       <header className='relative py-6 px-6 lg:py-7 lg:px-8 flex items-center justify-center bg-gradient-secondary'>
         {/* Back Button - Absolute positioned */}
         <button
-          onClick={() => router.back()}
-          className='absolute left-6 lg:left-8 flex items-center justify-center transition-all active:scale-95'
+          type='button'
+          onClick={() => safeGoBack(router, pathname, '/evaluator/home')}
+          className='absolute left-6 lg:left-8 flex items-center justify-center transition-all active:scale-95 cursor-pointer'
           aria-label='Go back'
         >
           <IoArrowBack className='w-6 h-6 lg:w-7 lg:h-7 text-white' />

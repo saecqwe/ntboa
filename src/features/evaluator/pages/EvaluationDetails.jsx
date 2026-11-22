@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 import { getEvaluationById } from '@/features/evaluator/services/evaluationService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { safeGoBack } from '@/lib/navigationHistory';
 import EvaluationDetailSkeleton from '@/ui/skeletons/EvaluationDetailSkeleton';
 import {
   OFFICIAL_CATEGORIES,
@@ -22,6 +23,7 @@ const globalEvaluatorEvalDetailCache = new Map();
 const EvaluationDetailsPage = () => {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const { user } = useAuth();
 
   const cachedData = params?.id ? globalEvaluatorEvalDetailCache.get(params.id) : null;
@@ -82,7 +84,8 @@ const EvaluationDetailsPage = () => {
       <div className='min-h-screen bg-[#181818] flex items-center justify-center flex-col gap-4 text-white'>
         <div className='text-lg'>{error || 'Evaluation not found'}</div>
         <button
-          onClick={() => router.back()}
+          type='button'
+          onClick={() => safeGoBack(router, pathname, '/evaluator/evaluations')}
           className='text-accent hover:underline text-sm cursor-pointer'
         >
           Go Back

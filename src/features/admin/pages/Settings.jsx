@@ -3,8 +3,9 @@
 import React, { useState, useCallback } from 'react';
 import Image from 'next/image';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/services/firebase/config';
 import { changeUserPassword, updateUserProfile } from '@/features/authentication/services/authService';
 import { uploadProfilePhoto, deleteProfilePhoto } from '@/services/firebase/storageService';
 import { compressImage, validateImageFile } from '@/lib/imageUtils';
@@ -12,6 +13,7 @@ import {
   HiMenu,
   HiOutlineUser,
   HiOutlineLockClosed,
+  HiOutlineRefresh,
   HiCheck,
   HiEye,
   HiEyeOff,
@@ -21,6 +23,7 @@ import {
 const SETTING_SECTIONS = [
   { id: 'profile', name: 'Profile', icon: HiOutlineUser },
   { id: 'password', name: 'Password', icon: HiOutlineLockClosed },
+  { id: 'maintenance', name: 'Maintenance', icon: HiOutlineRefresh },
 ];
 
 const SettingsPage = () => {
@@ -33,6 +36,9 @@ const SettingsPage = () => {
   const [saveStatus, setSaveStatus] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationResult, setMigrationResult] = useState(null);
+  const [migrationError, setMigrationError] = useState('');
   const fileInputRef = React.useRef(null);
 
   // Profile data – seeded from real auth user, with localStorage override
@@ -494,12 +500,83 @@ const SettingsPage = () => {
     </div>
   );
 
+  const handleRunMigration = useCallback(async () => {
+    setMigrationRunning(true);
+    setMigrationError('');
+    setMigrationResult(null);
+    try {
+      const migrateFn = httpsCallable(functions, 'migrateDatabaseSchema');
+      const result = await migrateFn();
+      setMigrationResult(result.data || { status: 'success' });
+    } catch (err) {
+      console.error('Database sync failed:', err);
+      setMigrationError(err?.message || 'Failed to run database stats sync. Please try again.');
+    } finally {
+      setMigrationRunning(false);
+    }
+  }, []);
+
+  const renderMaintenanceSettings = () => (
+    <div className='space-y-6'>
+      <div className='bg-card-bg rounded-lg border border-input-border p-4 sm:p-6 space-y-4'>
+        <div>
+          <h3 className='text-lg sm:text-xl font-semibold text-white mb-2'>
+            Sync & Recalculate Database Stats
+          </h3>
+          <p className='text-sm sm:text-base text-gray-400 leading-relaxed'>
+            Safely recomputes evaluator evaluation counts, referee evaluation counts, score totals,
+            averages, per-official suggested tiers, normalized tier labels (for example,
+            <span className='text-white font-medium'> 150 → Tier 150</span>), and missing
+            denormalized names across all historical records. Safe to run whenever needed.
+          </p>
+        </div>
+
+        {migrationError && (
+          <div className='bg-red-900/40 border border-red-700/50 text-red-300 rounded-lg px-4 py-3 text-sm'>
+            {migrationError}
+          </div>
+        )}
+
+        {migrationResult && (
+          <div className='bg-green-900/30 border border-green-700/50 text-green-300 rounded-lg px-4 py-3 text-sm space-y-1'>
+            <div className='font-semibold flex items-center gap-2'>
+              <HiCheck className='w-4 h-4' />
+              Database stats sync completed!
+            </div>
+            <div className='text-green-200/90'>
+              Users synced: {migrationResult.usersUpdated ?? 0} • Evaluations synced:{' '}
+              {migrationResult.evaluationsUpdated ?? 0}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <button
+            type='button'
+            onClick={handleRunMigration}
+            disabled={migrationRunning}
+            className='flex items-center justify-center space-x-2 px-6 py-3 bg-accent hover:bg-accent/90 disabled:bg-accent/50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium text-sm cursor-pointer'
+          >
+            {migrationRunning ? (
+              <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin' />
+            ) : (
+              <HiOutlineRefresh className='w-4 h-4' />
+            )}
+            <span>{migrationRunning ? 'Syncing...' : 'Run Stats Sync'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderSettingContent = () => {
     switch (activeSection) {
       case 'profile':
         return renderProfileSettings();
       case 'password':
         return renderPasswordSettings();
+      case 'maintenance':
+        return renderMaintenanceSettings();
       default:
         return renderProfileSettings();
     }
@@ -523,7 +600,6 @@ const SettingsPage = () => {
               >
                 <HiMenu className='w-5 h-5 sm:w-6 sm:h-6 text-white' />
               </button>
-              <BackButton />
               <div className='min-w-0 flex-1'>
                 <h1 className='text-lg sm:text-xl lg:text-2xl xl:text-3xl font-bold text-white heading truncate'>
                   Profile Settings
@@ -534,35 +610,37 @@ const SettingsPage = () => {
               </div>
             </div>
 
-            <button
-              onClick={
-                activeSection === 'profile'
-                  ? handleSaveProfile
-                  : handlePasswordReset
-              }
-              disabled={saveStatus === 'saving'}
-              className='flex items-center space-x-1 sm:space-x-2 px-3 sm:px-6 py-2 bg-accent hover:bg-accent/90 disabled:bg-accent/50 rounded-lg transition-colors flex-shrink-0'
-            >
-              {saveStatus === 'saving' ? (
-                <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin' />
-              ) : saveStatus === 'saved' ? (
-                <HiCheck className='w-4 h-4' />
-              ) : null}
-              <span className='text-xs sm:text-sm font-medium hidden sm:inline'>
-                {saveStatus === 'saving'
-                  ? 'Saving...'
-                  : saveStatus === 'saved'
-                  ? 'Saved!'
-                  : 'Save Changes'}
-              </span>
-              <span className='text-xs font-medium sm:hidden'>
-                {saveStatus === 'saving'
-                  ? 'Saving...'
-                  : saveStatus === 'saved'
-                  ? 'Saved!'
-                  : 'Save'}
-              </span>
-            </button>
+            {activeSection !== 'maintenance' && (
+              <button
+                onClick={
+                  activeSection === 'profile'
+                    ? handleSaveProfile
+                    : handlePasswordReset
+                }
+                disabled={saveStatus === 'saving'}
+                className='flex items-center space-x-1 sm:space-x-2 px-3 sm:px-6 py-2 bg-accent hover:bg-accent/90 disabled:bg-accent/50 rounded-lg transition-colors flex-shrink-0'
+              >
+                {saveStatus === 'saving' ? (
+                  <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin' />
+                ) : saveStatus === 'saved' ? (
+                  <HiCheck className='w-4 h-4' />
+                ) : null}
+                <span className='text-xs sm:text-sm font-medium hidden sm:inline'>
+                  {saveStatus === 'saving'
+                    ? 'Saving...'
+                    : saveStatus === 'saved'
+                    ? 'Saved!'
+                    : 'Save Changes'}
+                </span>
+                <span className='text-xs font-medium sm:hidden'>
+                  {saveStatus === 'saving'
+                    ? 'Saving...'
+                    : saveStatus === 'saved'
+                    ? 'Saved!'
+                    : 'Save'}
+                </span>
+              </button>
+            )}
           </div>
         </header>
 

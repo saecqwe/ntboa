@@ -5,7 +5,6 @@ import { collection, query, getDocs, orderBy, limit, where, documentId } from 'f
 import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { HiMenu, HiChevronDown, HiCheck, HiSearch, HiCalendar, HiChevronUp, HiSelector, HiChevronRight } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -364,7 +363,6 @@ const EvaluationsPage = () => {
       <main className='flex-1 min-w-0 lg:ml-64 overflow-y-auto'>
         {/* Header */}
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center gap-4'>
-          <BackButton variant='solid' className='shrink-0' />
           {/* Hamburger Menu - Mobile Only */}
           <button
             onClick={() => setSidebarOpen(true)}

@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { doc, getDoc, collection, query, where, getDocs, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
+import { safeGoBack } from '@/lib/navigationHistory';
 import { HiMenu, HiArrowLeft, HiChevronUp, HiChevronDown, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
@@ -17,6 +18,7 @@ const globalEvaluatorNameCache = new Map();
 const RefereeDetailPage = () => {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const cachedData = params?.id ? globalRefereeDetailCache.get(params.id) : null;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -629,8 +631,9 @@ const RefereeDetailPage = () => {
 
             {/* Back Button */}
             <button
-              onClick={() => router.back()}
-              className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body'
+              type='button'
+              onClick={() => safeGoBack(router, pathname, '/admin/referees')}
+              className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body cursor-pointer'
             >
               <HiArrowLeft className='w-5 h-5' />
               Back to Referees List

@@ -1,14 +1,21 @@
 'use client';
 
 import { createContext, useEffect, useState, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { onAuthObserver, getUserDocument, login, logout, createUser, checkIfAdminExists } from '@/authentication/services/authService';
+import { recordPathname } from '@/lib/navigationHistory';
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const pathname = usePathname();
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    recordPathname(pathname);
+  }, [pathname]);
 
   const refreshUserData = useCallback(async () => {
     if (user) {

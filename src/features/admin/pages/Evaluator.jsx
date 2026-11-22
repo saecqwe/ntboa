@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { doc, getDoc, collection, query, where, getDocs, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
+import { safeGoBack } from '@/lib/navigationHistory';
 import { HiMenu, HiArrowLeft, HiChevronUp, HiChevronDown, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
 import {
@@ -21,6 +22,7 @@ const globalRefereeNameCache = new Map();
 const EvaluatorDetailPage = () => {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const cachedData = params?.id ? globalEvaluatorDetailCache.get(params.id) : null;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -698,7 +700,7 @@ const EvaluatorDetailPage = () => {
 
             <button
               type='button'
-              onClick={() => router.back()}
+              onClick={() => safeGoBack(router, pathname, '/admin/evaluators')}
               className='flex items-center gap-2 text-white hover:text-[#9ca3af] transition-colors text-fluid-base text-body cursor-pointer'
             >
               <HiArrowLeft className='w-5 h-5' />

@@ -7,10 +7,9 @@ import { createUser } from '@/features/authentication/services/authService';
 import { db, functions } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
-import BackButton from '@/ui/BackButton';
 import { HiMenu, HiPlus, HiPencil, HiTrash, HiX, HiChevronUp, HiChevronDown, HiSelector } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
-import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
+import { TIER_DATA, getScoresForReferee, getOfficialTotalScore, normalizeTier } from '@/lib/evaluationUtils';
 
 // ---------------------------------------------------------------------------
 // Module-level cache — survives component unmounts (tab switches).
@@ -28,7 +27,7 @@ const RefereesPage = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState({ fullName: '', email: '', password: '' });
-  const [editFormData, setEditFormData] = useState({ id: '', fullName: '', tier: '' });
+  const [editFormData, setEditFormData] = useState({ id: '', fullName: '', email: '', tier: '' });
   const [editingReferee, setEditingReferee] = useState(null);
 
   // Initialize from module-level cache for instant tab switch renders
@@ -412,7 +411,8 @@ const RefereesPage = () => {
     setEditFormData({
       id: referee.id,
       fullName: referee.displayName || '',
-      tier: referee.tier || 'Tier 100',
+      email: referee.email || '',
+      tier: normalizeTier(referee.tier) || 'Tier 100',
     });
     setShowEditModal(true);
   };
@@ -423,6 +423,7 @@ const RefereesPage = () => {
     setEditFormData({
       id: '',
       fullName: '',
+      email: '',
       tier: '',
     });
   };
@@ -440,17 +441,37 @@ const RefereesPage = () => {
     if (!editingReferee) return;
     setActionLoading(true);
 
+    const nextEmail = (editFormData.email || '').trim().toLowerCase();
+    const currentEmail = (editingReferee.email || '').trim().toLowerCase();
+    const emailChanged =
+      editingReferee.status !== 'Disabled' &&
+      Boolean(nextEmail) &&
+      nextEmail !== currentEmail;
+
     try {
+      if (emailChanged) {
+        const updateUserEmailFn = httpsCallable(functions, 'updateUserEmail');
+        await updateUserEmailFn({
+          uid: editingReferee.id,
+          newEmail: nextEmail,
+        });
+      }
+
       const refereeRef = doc(db, 'users', editingReferee.id);
       await updateDoc(refereeRef, {
-        displayName: editFormData.fullName,
+        displayName: editFormData.fullName.trim(),
         tier: editFormData.tier,
       });
-      toast.success("Referee updated successfully!");
+
+      toast.success(
+        emailChanged
+          ? 'Referee updated! Password is unchanged; they will sign in with the new email.'
+          : 'Referee updated successfully!'
+      );
       handleCloseEditModal();
     } catch (error) {
       console.error('Error updating referee:', error);
-      toast.error("Failed to update referee.");
+      toast.error(error?.message || 'Failed to update referee.');
     } finally {
       setActionLoading(false);
     }
@@ -499,7 +520,6 @@ const RefereesPage = () => {
       <main className='flex-1 lg:ml-64 overflow-y-auto'>
         {/* Header */}
         <header className='bg-[#2a2a2a] border-b border-[#3a3a3a] px-4 py-4 lg:px-8 lg:py-6 flex items-center gap-4'>
-          <BackButton variant='solid' className='shrink-0' />
           {/* Hamburger Menu - Mobile Only */}
           <button
             onClick={() => setSidebarOpen(true)}
@@ -944,6 +964,28 @@ const RefereesPage = () => {
                 />
               </div>
 
+              {/* Email Address */}
+              <div className='mb-5'>
+                <label className='block text-white text-fluid-base text-body mb-2'>
+                  Email Address
+                </label>
+                <input
+                  type='email'
+                  name='email'
+                  value={editFormData.email}
+                  onChange={handleEditInputChange}
+                  placeholder='referee@example.com'
+                  required
+                  disabled={editingReferee?.status === 'Disabled'}
+                  className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a] disabled:opacity-50 disabled:cursor-not-allowed'
+                />
+                <p className='text-xs text-[#9ca3af] mt-1.5'>
+                  {editingReferee?.status === 'Disabled'
+                    ? 'Email cannot be changed for a disabled account.'
+                    : "The user's password stays the same, and they'll be asked to sign in again with the new email."}
+                </p>
+              </div>
+
               {/* Tier */}
               <div className='mb-6'>
                 <label className='block text-white text-fluid-base text-body mb-2'>
@@ -955,10 +997,11 @@ const RefereesPage = () => {
                   onChange={handleEditInputChange}
                   className='w-full bg-[#3a3a3a] text-white placeholder-[#6b7280] rounded-lg px-4 py-3 text-fluid-base text-body focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all border border-[#4a4a4a]'
                 >
-                  <option>Tier 100</option>
-                  <option>Tier 150</option>
-                  <option>Tier 200</option>
-                  <option>Tier 250</option>
+                  {TIER_DATA.map((t) => (
+                    <option key={t.tier} value={`Tier ${t.tier}`}>
+                      Tier {t.tier}
+                    </option>
+                  ))}
                 </select>
               </div>
 
