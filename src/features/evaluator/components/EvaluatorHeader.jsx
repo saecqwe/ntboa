@@ -8,8 +8,7 @@ import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import { HiUserGroup } from 'react-icons/hi';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/authentication/hooks/useAuth';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/services/firebase/config';
+import { logout } from '@/features/authentication/services/authService';
 
 const EvaluatorHeader = ({
   userName = 'User',
@@ -21,7 +20,7 @@ const EvaluatorHeader = ({
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await logout();
       router.push('/evaluator/login'); // Or general login
     } catch (error) {
       console.error("Logout failed", error);

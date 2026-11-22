@@ -16,6 +16,7 @@ let globalAssignmentsCache = {
   referees: [],
   assignments: [],
   locationsList: [],
+  includePast: false,
   loaded: false,
   timestamp: 0,
 };
@@ -290,6 +291,7 @@ const AssignmentsPage = () => {
   const [filterReferee, setFilterReferee] = useState('');
   const [filterEvaluator, setFilterEvaluator] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
+  const [showPastAssignments, setShowPastAssignments] = useState(() => globalAssignmentsCache.includePast);
 
   // In-memory module cache to instantly render when switching tabs
   const dataCacheRef = useRef(globalAssignmentsCache);
@@ -298,8 +300,10 @@ const AssignmentsPage = () => {
     let isMounted = true;
 
     const fetchData = async () => {
-      // If we already have cached data, populate immediately and don't block the screen with full loader
-      if (globalAssignmentsCache.loaded) {
+      const hasStaticLists = globalAssignmentsCache.loaded;
+
+      // If we already have cached data matching the current history scope, populate immediately
+      if (hasStaticLists && globalAssignmentsCache.includePast === showPastAssignments) {
         setEvaluators(globalAssignmentsCache.evaluators);
         setReferees(globalAssignmentsCache.referees);
         setAssignments(globalAssignmentsCache.assignments);
@@ -310,25 +314,39 @@ const AssignmentsPage = () => {
       }
 
       try {
-        // Parallelize all 4 Firestore collection queries with Promise.all
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+        const assignmentsQuery = showPastAssignments
+          ? query(collection(db, 'assignments'))
+          : query(collection(db, 'assignments'), where('scheduledDate', '>=', thirtyDaysAgo));
+
+        // Reuse cached evaluators/referees/locations when toggling history filter
         const [
           evaluatorsSnapshot,
           refereesSnapshot,
           assignmentsSnapshot,
           locationsSnapshot
         ] = await Promise.all([
-          getDocs(query(collection(db, 'users'), where('role', '==', 'evaluator'))),
-          getDocs(query(collection(db, 'users'), where('role', '==', 'referee'))),
-          getDocs(query(collection(db, 'assignments'))),
-          getDocs(query(collection(db, 'locations')))
+          hasStaticLists ? Promise.resolve(null) : getDocs(query(collection(db, 'users'), where('role', '==', 'evaluator'))),
+          hasStaticLists ? Promise.resolve(null) : getDocs(query(collection(db, 'users'), where('role', '==', 'referee'))),
+          getDocs(assignmentsQuery),
+          hasStaticLists ? Promise.resolve(null) : getDocs(query(collection(db, 'locations')))
         ]);
 
         if (!isMounted) return;
 
-        const newEvaluators = evaluatorsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-        const newReferees = refereesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+        const newEvaluators = evaluatorsSnapshot
+          ? evaluatorsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+          : globalAssignmentsCache.evaluators;
+        const newReferees = refereesSnapshot
+          ? refereesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+          : globalAssignmentsCache.referees;
         const newAssignments = assignmentsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-        const newLocations = locationsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const newLocations = locationsSnapshot
+          ? locationsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          : globalAssignmentsCache.locationsList;
 
         // Update in-memory global cache
         globalAssignmentsCache = {
@@ -336,6 +354,7 @@ const AssignmentsPage = () => {
           referees: newReferees,
           assignments: newAssignments,
           locationsList: newLocations,
+          includePast: showPastAssignments,
           loaded: true,
           timestamp: Date.now(),
         };
@@ -358,7 +377,7 @@ const AssignmentsPage = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [showPastAssignments]);
 
   const displayedAssignments = useMemo(() => {
     return assignments.filter(assignment => {
@@ -1171,6 +1190,18 @@ const AssignmentsPage = () => {
                       </button>
                     )}
                   </div>
+                  <button
+                    type='button'
+                    onClick={() => setShowPastAssignments((prev) => !prev)}
+                    className={`text-xs px-3 py-2 rounded-lg border transition-colors font-medium whitespace-nowrap cursor-pointer ${
+                      showPastAssignments
+                        ? 'bg-accent/20 text-accent border-accent/40'
+                        : 'bg-[#2a2a2a] text-[#9ca3af] hover:text-white border-[#3a3a3a]'
+                    }`}
+                    title='Toggle assignments older than 30 days'
+                  >
+                    {showPastAssignments ? 'Showing All History' : 'Show Past (>30d)'}
+                  </button>
                   {(filterDate || filterEvaluator || filterReferee || filterLocation) && (
                     <button
                       type='button'

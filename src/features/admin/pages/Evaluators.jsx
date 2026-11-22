@@ -127,6 +127,7 @@ const EvaluatorsPage = () => {
         displayName: formData.fullName,
         email: formData.email,
         role: 'evaluator',
+        status: 'Active',
         createdAt: serverTimestamp(),
         evaluationsMade: 0, // Initialize stats
         photoURL: '',
@@ -406,7 +407,8 @@ const EvaluatorsPage = () => {
                       sortedEvaluators.map((evaluator) => (
                         <tr
                           key={evaluator.id}
-                          className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
+                          onClick={() => router.push(`/admin/evaluators/${evaluator.id}`)}
+                          className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
                         >
                           <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
                             <div className='flex items-center gap-2'>

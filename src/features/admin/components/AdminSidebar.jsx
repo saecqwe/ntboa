@@ -4,7 +4,8 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { getAuth, signOut } from 'firebase/auth';
+import { useAuth } from '@/features/authentication/hooks/useAuth';
+import { logout } from '@/features/authentication/services/authService';
 import { PiGlobeSimpleThin } from 'react-icons/pi';
 import {
   HiOutlineHome,
@@ -49,6 +50,7 @@ const NAV_ITEMS = [
 const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, userData } = useAuth();
   const [profile, setProfile] = React.useState({
     firstName: 'Admin',
     lastName: 'User',
@@ -56,22 +58,43 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
     profilePhotoUrl: null,
   });
 
-  // Load profile data from localStorage or use provided profileData
+  // Load UID-scoped profile data from localStorage or fall back to live Auth userData
   React.useEffect(() => {
     if (profileData) {
       setProfile(profileData);
-    } else {
-      const savedProfile = localStorage.getItem('ntboa_admin_profile');
+      return;
+    }
+
+    if (user?.uid && typeof window !== 'undefined') {
+      const savedProfile = localStorage.getItem(`ntboa_admin_profile_${user.uid}`);
       if (savedProfile) {
         try {
-          const parsedProfile = JSON.parse(savedProfile);
-          setProfile(parsedProfile);
+          setProfile(JSON.parse(savedProfile));
+          return;
         } catch (error) {
           console.error('Error loading profile data:', error);
         }
       }
     }
-  }, [profileData]);
+
+    if (userData) {
+      const displayName = userData.displayName || userData.name || 'Admin User';
+      const parts = displayName.trim().split(/\s+/);
+      setProfile({
+        firstName: parts[0] || 'Admin',
+        lastName: parts.slice(1).join(' ') || '',
+        role: 'Administrator',
+        profilePhotoUrl: userData.photo || userData.photoURL || userData.profilePhotoUrl || null,
+      });
+    } else {
+      setProfile({
+        firstName: 'Admin',
+        lastName: 'User',
+        role: 'Administrator',
+        profilePhotoUrl: null,
+      });
+    }
+  }, [profileData, user?.uid, userData]);
 
   const closeSidebar = () => {
     if (typeof setIsOpen === 'function') setIsOpen(false);
@@ -80,9 +103,7 @@ const AdminSidebar = ({ isOpen, setIsOpen, onClose, profileData }) => {
 
   const handleLogout = async () => {
     try {
-      const auth = getAuth();
-      await signOut(auth);
-      localStorage.removeItem('ntboa_admin_profile');
+      await logout();
       router.push('/admin/login');
     } catch (error) {
       console.error('Logout failed:', error);

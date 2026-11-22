@@ -21,9 +21,11 @@ export const AuthProvider = ({ children }) => {
     const unsubscribe = onAuthObserver(async (currentUser) => {
       if (currentUser) {
         try {
-          // Force token refresh check against Firebase Auth backend
-          await currentUser.getIdToken(true);
-          const data = await getUserDocument(currentUser.uid);
+          // Force token refresh check against Firebase Auth backend concurrently with profile fetch
+          const [, data] = await Promise.all([
+            currentUser.getIdToken(true),
+            getUserDocument(currentUser.uid),
+          ]);
 
           // If the account document no longer exists in Firestore or is disabled
           if (!data || data.status === 'Disabled') {

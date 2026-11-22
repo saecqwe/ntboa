@@ -1,11 +1,10 @@
 /**
  * imageUtils.js
- * Utility functions for validating and compressing user avatar / profile images
- * client-side before uploading or saving to Firestore / localStorage.
+ * Utility functions for validating, compressing, and converting user avatar / profile images
+ * client-side before uploading to Firebase Storage.
  *
- * Firestore documents have a strict 1,048,487 bytes (~1MB) total size limit.
- * Compressing images to a max dimension of 400x400 at 0.8 JPEG quality produces
- * high-resolution avatars (~25KB - 50KB) that easily fit within Firestore's limits.
+ * Compressing images to a max dimension of 400x400 at 0.82 JPEG quality produces
+ * crisp avatars (~25KB - 50KB) for fast binary upload via uploadProfilePhoto().
  */
 
 /**
@@ -139,4 +138,29 @@ export const compressImage = async (file, options = {}) => {
 
     img.src = objectUrl;
   });
+};
+
+/**
+ * Converts a base64 Data URL string into a Blob for binary upload to Firebase Storage.
+ *
+ * @param {string} dataUrl - Base64-encoded Data URL (e.g., data:image/jpeg;base64,...).
+ * @returns {Blob}
+ */
+export const dataUrlToBlob = (dataUrl) => {
+  if (typeof dataUrl !== 'string') {
+    throw new Error('Invalid image data URL.');
+  }
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    throw new Error('Invalid image data URL.');
+  }
+
+  const mimeType = match[1];
+  const base64 = match[2];
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
 };

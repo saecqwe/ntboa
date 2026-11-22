@@ -212,7 +212,6 @@ const EvaluationDetailPage = () => {
 
   const handleSaveChanges = async () => {
     try {
-      const newTotalScore = Object.values(editForm.scores).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
       const evalRef = doc(db, 'evaluations', params.id);
 
       const isGroup = evaluation.rawScores && (evaluation.rawScores.official_0 || evaluation.officials);
@@ -229,6 +228,30 @@ const EvaluationDetailPage = () => {
           ...(typeof evaluation.rawComments === 'object' ? evaluation.rawComments : {}),
           [offKey]: editForm.comments,
         };
+      }
+
+      // Calculate total score properly: sum across all officials in a group eval, or the single official's scores
+      let newTotalScore = 0;
+      if (isGroup && updatedScoresPayload && typeof updatedScoresPayload === 'object') {
+        Object.values(updatedScoresPayload).forEach((officialScores) => {
+          if (officialScores && typeof officialScores === 'object') {
+            newTotalScore += Object.values(officialScores).reduce(
+              (a, b) => a + (typeof b === 'number' ? b : 0),
+              0
+            );
+          }
+        });
+        if (newTotalScore === 0) {
+          newTotalScore = Object.values(editForm.scores).reduce(
+            (a, b) => a + (typeof b === 'number' ? b : 0),
+            0
+          );
+        }
+      } else {
+        newTotalScore = Object.values(editForm.scores).reduce(
+          (a, b) => a + (typeof b === 'number' ? b : 0),
+          0
+        );
       }
 
       await updateDoc(evalRef, {

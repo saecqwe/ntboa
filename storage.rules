@@ -1,0 +1,27 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Single deterministic avatar object per user (prevents orphan files and storage-spam DoS)
+    match /profile-photos/{userId}/avatar.jpg {
+      // Authenticated users can fetch metadata/download URLs; no bucket listing allowed
+      allow get: if request.auth != null;
+
+      // Owner-only upload/replace; strict size cap (2MB) and safe raster MIME types only (blocks SVG XSS)
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+
+      // Separate delete rule because request.resource is null on delete operations
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

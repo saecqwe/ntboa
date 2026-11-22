@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, limit, orderBy, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy, documentId, getCountFromServer } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
@@ -64,20 +64,58 @@ const AdminDashboardPage = () => {
           limit(500)
         );
 
-        // Fetch Users and Evaluations in parallel
-        const [usersSnapshot, evaluationsSnapshot] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(evaluationsQuery)
+        // Count referees server-side and fetch evaluations in parallel (zero full users collection scan)
+        const [refereesCountSnap, evaluationsSnapshot] = await Promise.all([
+          getCountFromServer(query(collection(db, 'users'), where('role', '==', 'referee'))),
+          getDocs(evaluationsQuery),
         ]);
 
-        const userMap = {};
-        const referees = [];
-        usersSnapshot.forEach((docSnap) => {
+        const refereesCount = refereesCountSnap.data().count;
+
+        // Collect only missing user IDs not already denormalized on evaluation docs
+        const missingUserIds = new Set();
+        evaluationsSnapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
-          userMap[docSnap.id] = data;
-          if (data.role === 'referee') referees.push(data);
+          const rId = data.refereeId || (Array.isArray(data.refereeIds) ? data.refereeIds[0] : null);
+          const eId = data.evaluatorId;
+
+          const hasRefName = Boolean(
+            (typeof data.refereeName === 'string' && data.refereeName.trim() && data.refereeName !== 'Unknown') ||
+            (Array.isArray(data.refereeNames) && data.refereeNames.length > 0) ||
+            (Array.isArray(data.officials) && data.officials.some((o) => o?.name))
+          );
+          const hasEvalName = Boolean(
+            typeof data.evaluatorName === 'string' &&
+            data.evaluatorName.trim() &&
+            data.evaluatorName !== 'Unknown'
+          );
+
+          if (!hasRefName && rId && !String(rId).startsWith('official_')) {
+            missingUserIds.add(rId);
+          }
+          if (!hasEvalName && eId) {
+            missingUserIds.add(eId);
+          }
         });
-        const refereesCount = referees.length;
+
+        const userMap = {};
+        const missingIds = Array.from(missingUserIds);
+        if (missingIds.length > 0) {
+          const chunks = [];
+          for (let i = 0; i < missingIds.length; i += 30) {
+            chunks.push(missingIds.slice(i, i + 30));
+          }
+          const chunkSnaps = await Promise.all(
+            chunks.map((chunk) =>
+              getDocs(query(collection(db, 'users'), where(documentId(), 'in', chunk)))
+            )
+          );
+          chunkSnaps.forEach((snap) => {
+            snap.forEach((uDoc) => {
+              userMap[uDoc.id] = uDoc.data();
+            });
+          });
+        }
 
         const evaluationsData = evaluationsSnapshot.docs.map((docSnap) => {
           const data = docSnap.data();
@@ -250,17 +288,21 @@ const AdminDashboardPage = () => {
                     </div>
 
                     {list ? (
-                      <ul className='space-y-1.5'>
-                        {list.map((name, index) => (
-                          <li
-                            key={index}
-                            className='text-fluid-base text-white text-body flex items-center gap-2'
-                          >
-                            <span className='w-1.5 h-1.5 bg-white rounded-full' />
-                            {name}
-                          </li>
-                        ))}
-                      </ul>
+                      list.length > 0 ? (
+                        <ul className='space-y-1.5'>
+                          {list.map((name, index) => (
+                            <li
+                              key={index}
+                              className='text-fluid-base text-white text-body flex items-center gap-2'
+                            >
+                              <span className='w-1.5 h-1.5 bg-white rounded-full' />
+                              {name}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className='text-fluid-sm text-[#9ca3af]'>No evaluations yet</div>
+                      )
                     ) : (
                       <div className='text-fluid-4xl font-bold text-white heading'>
                         {value}
@@ -388,8 +430,8 @@ const AdminDashboardPage = () => {
                   Evaluations this Week
                 </h2>
 
-                <div className='h-[250px] lg:h-[300px]'>
-                  <ResponsiveContainer width='100%' height='100%'>
+                <div className='h-[250px] lg:h-[300px] min-w-0'>
+                  <ResponsiveContainer width='100%' height='100%' minWidth={0} minHeight={250}>
                     <LineChart data={chartData}>
                       <CartesianGrid strokeDasharray='3 3' stroke='#3a3a3a' />
                       <XAxis

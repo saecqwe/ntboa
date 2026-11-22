@@ -3,7 +3,7 @@
  * Unit tests for image compression and validation utilities.
  */
 import { describe, it, expect } from 'vitest';
-import { validateImageFile } from '../imageUtils';
+import { validateImageFile, dataUrlToBlob } from '../imageUtils';
 
 describe('validateImageFile', () => {
   it('rejects null or undefined file', () => {
@@ -43,5 +43,22 @@ describe('validateImageFile', () => {
     const res = validateImageFile(mockImage, 15);
     expect(res.valid).toBe(true);
     expect(res.error).toBeNull();
+  });
+});
+
+describe('dataUrlToBlob', () => {
+  it('converts a valid base64 JPEG data URL into a Blob', () => {
+    // 1x1 JPEG base64 payload
+    const sampleDataUrl = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    const blob = dataUrlToBlob(sampleDataUrl);
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/jpeg');
+    expect(blob.size).toBeGreaterThan(0);
+  });
+
+  it('throws on invalid data URL inputs', () => {
+    expect(() => dataUrlToBlob(null)).toThrow(/invalid image data url/i);
+    expect(() => dataUrlToBlob('https://example.com/avatar.jpg')).toThrow(/invalid image data url/i);
+    expect(() => dataUrlToBlob('data:image/jpeg;utf8,notbase64')).toThrow(/invalid image data url/i);
   });
 });

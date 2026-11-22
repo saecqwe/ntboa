@@ -108,7 +108,7 @@ const ImportCenterPage = () => {
 
                 wb.SheetNames.forEach(sheetName => {
                     const ws = wb.Sheets[sheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+                    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false, dateNF: 'yyyy-mm-dd' });
                     if (jsonData.length === 0) return;
 
                     const cols = Object.keys(jsonData[0]).map(k => k.toLowerCase().trim());
@@ -131,7 +131,7 @@ const ImportCenterPage = () => {
                 // Fallback single sheet detection
                 if (!foundReferees.length && !foundEvaluators.length && !foundSchedule.length && wb.SheetNames.length === 1) {
                     const ws = wb.Sheets[wb.SheetNames[0]];
-                    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+                    const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false, dateNF: 'yyyy-mm-dd' });
                     const cols = Object.keys(jsonData[0] || {}).map(k => k.toLowerCase().trim());
 
                     if (cols.includes('date') && cols.includes('location')) {
@@ -220,19 +220,32 @@ const ImportCenterPage = () => {
 
                 try {
                     // 1. Create Auth User
-                    const userCred = await createUser(email, generateRandomPassword(), name, role);
+                    const userCred = await createUser(email, generateRandomPassword());
                     const uid = userCred.user.uid;
 
-                    // 2. Create Firestore Profile (CRITICAL FIX)
-                    await setDoc(doc(db, 'users', uid), {
+                    // 2. Create Firestore Profile with unified platform schema
+                    const userDocPayload = {
                         uid,
                         displayName: name,
                         email: email,
                         role: role,
-                        tier: role === 'referee' ? tier : null,
                         createdAt: serverTimestamp(),
-                        stats: { evaluations: 0, score: 0 } // Initialize stats
-                    });
+                        photoURL: '',
+                        status: 'Active',
+                    };
+
+                    if (role === 'referee') {
+                        userDocPayload.tier = tier || 'Tier 100';
+                        userDocPayload.avgScore = 0;
+                        userDocPayload.evaluations = 0;
+                        userDocPayload.evaluationsCount = 0;
+                        userDocPayload.totalScoreSum = 0;
+                        userDocPayload.suggestedTier = '';
+                    } else if (role === 'evaluator') {
+                        userDocPayload.evaluationsMade = 0;
+                    }
+
+                    await setDoc(doc(db, 'users', uid), userDocPayload);
 
                     // 3. Update Local Map immediately
                     newUsersMap[resultKey][email.toLowerCase()] = uid;
@@ -307,9 +320,14 @@ const ImportCenterPage = () => {
                 }
 
                 try {
-                    // Formatting Date
-                    const d = new Date(`${dateStr} ${timeStr}`);
-                    if (isNaN(d.getTime())) throw new Error("Invalid Date");
+                    // Formatting Date safely
+                    let d = new Date(`${dateStr} ${timeStr}`);
+                    if (isNaN(d.getTime())) {
+                        d = new Date(dateStr);
+                    }
+                    if (isNaN(d.getTime())) {
+                        throw new Error(`Invalid Date format for "${dateStr} ${timeStr}". Please ensure date is YYYY-MM-DD.`);
+                    }
 
                     await addDoc(collection(db, 'assignments'), {
                         evaluatorId: evalId,

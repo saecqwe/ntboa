@@ -26,10 +26,6 @@ service cloud.firestore {
       return hasRole('evaluator');
     }
 
-    function isReferee() {
-      return hasRole('referee');
-    }
-
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -39,11 +35,14 @@ service cloud.firestore {
       // Any authenticated user can read profiles (needed for name lookups, directories)
       allow read: if isAuthenticated();
 
-      // Users can update their own profile details, but cannot alter their role or status directly
+      // Users can update their own profile details, but cannot alter their role or status directly.
+      // Evaluators can safely update suggestedTier and evaluation stats rollups on referee documents.
       allow update: if isAuthenticated() && (
         isAdmin() ||
         (isOwner(userId) && 
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status'])) ||
+        (isEvaluator() && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suggestedTier', 'evaluations', 'evaluationsCount', 'totalScoreSum', 'avgScore']))
       );
 
       // Only admins can create or delete user records

@@ -6,6 +6,7 @@ import AdminSidebar from '@/features/admin/components/AdminSidebar';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { changeUserPassword, updateUserProfile } from '@/features/authentication/services/authService';
+import { uploadProfilePhoto, deleteProfilePhoto } from '@/services/firebase/storageService';
 import { compressImage, validateImageFile } from '@/lib/imageUtils';
 import {
   HiMenu,
@@ -31,7 +32,7 @@ const SettingsPage = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false);
   const fileInputRef = React.useRef(null);
 
   // Profile data – seeded from real auth user, with localStorage override
@@ -44,16 +45,20 @@ const SettingsPage = () => {
     profilePhotoUrl: null,
   });
 
-  // Seed profile from real Firebase user, with localStorage override
+  // Seed profile from UID-scoped localStorage override or Firebase Auth / Firestore userData
+  const profileStorageKey = user?.uid ? `ntboa_admin_profile_${user.uid}` : null;
+
   React.useEffect(() => {
-    const savedProfile = localStorage.getItem('ntboa_admin_profile');
-    if (savedProfile) {
-      try {
-        const parsedProfile = JSON.parse(savedProfile);
-        setProfileData(parsedProfile);
-        return;
-      } catch (error) {
-        console.error('Error loading saved profile:', error);
+    if (profileStorageKey) {
+      const savedProfile = localStorage.getItem(profileStorageKey);
+      if (savedProfile) {
+        try {
+          const parsedProfile = JSON.parse(savedProfile);
+          setProfileData(parsedProfile);
+          return;
+        } catch (error) {
+          console.error('Error loading saved profile:', error);
+        }
       }
     }
     // Fallback: seed from Firebase Auth / Firestore userData
@@ -69,7 +74,7 @@ const SettingsPage = () => {
         profilePhotoUrl: userData?.photo || userData?.photoURL || userData?.profilePhotoUrl || null,
       }));
     }
-  }, [user, userData]);
+  }, [user, userData, profileStorageKey]);
 
   // Password data
   const [passwordData, setPasswordData] = useState({
@@ -95,19 +100,41 @@ const SettingsPage = () => {
   const handleSaveProfile = useCallback(async () => {
     setSaveStatus('saving');
     try {
+      let nextPhotoUrl = profileData.profilePhotoUrl || '';
+
       if (user?.uid) {
+        if (nextPhotoUrl.startsWith('data:')) {
+          nextPhotoUrl = await uploadProfilePhoto(user.uid, nextPhotoUrl);
+        } else if (photoRemoved) {
+          await deleteProfilePhoto(user.uid);
+          nextPhotoUrl = '';
+        }
+
         await updateUserProfile(user.uid, {
           displayName: `${profileData.firstName} ${profileData.lastName}`.trim(),
           name: `${profileData.firstName} ${profileData.lastName}`.trim(),
           phone: profileData.phone,
-          photo: profileData.profilePhotoUrl || '',
-          photoURL: profileData.profilePhotoUrl || '',
-          profilePhotoUrl: profileData.profilePhotoUrl || '',
+          photo: nextPhotoUrl,
+          photoURL: nextPhotoUrl,
+          profilePhotoUrl: nextPhotoUrl,
         });
+      }
+
+      const updatedProfileData = {
+        ...profileData,
+        profilePhotoUrl: nextPhotoUrl || null,
+      };
+      setProfileData(updatedProfileData);
+      setPhotoRemoved(false);
+
+      if (profileStorageKey) {
+        localStorage.setItem(profileStorageKey, JSON.stringify(updatedProfileData));
+      }
+
+      if (user?.uid) {
         await refreshUserData?.();
       }
 
-      localStorage.setItem('ntboa_admin_profile', JSON.stringify(profileData));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (err) {
@@ -115,7 +142,7 @@ const SettingsPage = () => {
       setSaveStatus('');
       alert(err.message || 'Failed to save profile. Please try again.');
     }
-  }, [profileData, user, refreshUserData]);
+  }, [profileData, photoRemoved, user, refreshUserData, profileStorageKey]);
 
   const handlePasswordReset = useCallback(async () => {
     setPasswordError('');
@@ -173,22 +200,11 @@ const SettingsPage = () => {
         quality: 0.82,
       });
 
-      setProfilePhoto(photoUrl);
-      setProfileData((prev) => {
-        const newProfileData = {
-          ...prev,
-          profilePhotoUrl: photoUrl,
-        };
-        try {
-          localStorage.setItem(
-            'ntboa_admin_profile',
-            JSON.stringify(newProfileData)
-          );
-        } catch (storageErr) {
-          console.warn('localStorage quota warning:', storageErr);
-        }
-        return newProfileData;
-      });
+      setProfileData((prev) => ({
+        ...prev,
+        profilePhotoUrl: photoUrl,
+      }));
+      setPhotoRemoved(false);
     } catch (err) {
       console.error('Error compressing image:', err);
       alert('Failed to process image. Please try another file.');
@@ -200,16 +216,11 @@ const SettingsPage = () => {
   }, []);
 
   const handleRemovePhoto = useCallback(() => {
-    setProfilePhoto(null);
-    setProfileData((prev) => {
-      const newProfileData = {
-        ...prev,
-        profilePhotoUrl: null,
-      };
-      // Save to localStorage immediately for real-time sync
-      localStorage.setItem('ntboa_admin_profile', JSON.stringify(newProfileData));
-      return newProfileData;
-    });
+    setProfileData((prev) => ({
+      ...prev,
+      profilePhotoUrl: null,
+    }));
+    setPhotoRemoved(true);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }

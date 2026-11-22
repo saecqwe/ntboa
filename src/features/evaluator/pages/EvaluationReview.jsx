@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, updateDoc, doc, increment } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import EvaluatorHeader from '../components/EvaluatorHeader';
 import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
@@ -29,24 +29,62 @@ const calculateTier = (score) => {
 const EvaluationReviewContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, userData: authUserData } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Retrieve pending evaluation data from sessionStorage first, falling back to URL searchParams
+  const [sessionDraft] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('ntboa_pending_eval');
+        if (stored) return JSON.parse(stored);
+      } catch (err) {
+        console.warn('Could not parse sessionStorage draft:', err);
+      }
+    }
+    return null;
+  });
+
   const officialsParam = searchParams.get('officials');
-  const parsedOfficials = officialsParam
-    ? JSON.parse(decodeURIComponent(officialsParam))
-    : [];
+  let parsedOfficials = [];
+  if (sessionDraft?.officials && Array.isArray(sessionDraft.officials)) {
+    parsedOfficials = sessionDraft.officials;
+  } else if (officialsParam) {
+    try {
+      parsedOfficials = JSON.parse(decodeURIComponent(officialsParam));
+    } catch {
+      parsedOfficials = [];
+    }
+  }
 
   const officialParam = searchParams.get('official');
-  const fallbackOfficial = officialParam
-    ? JSON.parse(officialParam)
-    : { name: 'Michael Johnson', tier: 'Tier 150', id: null };
+  let fallbackOfficial = { name: 'Michael Johnson', tier: 'Tier 150', id: null };
+  if (officialParam) {
+    try {
+      fallbackOfficial = JSON.parse(officialParam);
+    } catch {
+      // keep default fallback
+    }
+  }
 
   const officials = parsedOfficials.length > 0 ? parsedOfficials : [fallbackOfficial];
   const official = officials[0];
 
-  const ratings = JSON.parse(searchParams.get('ratings') || '{}');
-  const comments = JSON.parse(searchParams.get('comments') || '{}');
+  const ratings = sessionDraft?.ratings || (() => {
+    try {
+      return JSON.parse(searchParams.get('ratings') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+
+  const comments = sessionDraft?.comments || (() => {
+    try {
+      return JSON.parse(searchParams.get('comments') || '{}');
+    } catch {
+      return {};
+    }
+  })();
 
   const officialRatings = ratings.official_0 || Object.values(ratings).find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)) || {};
   const officialComments = comments.official_0 || Object.values(comments).find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry)) || {};
@@ -67,8 +105,8 @@ const EvaluationReviewContent = () => {
 
   const currentTier = calculateTier(effectiveScoreForTier);
 
-  const gameLocation = searchParams.get('gameLocation');
-  const groupComment = searchParams.get('groupComment') || '';
+  const gameLocation = sessionDraft?.gameLocation || searchParams.get('gameLocation');
+  const groupComment = sessionDraft?.groupComment || searchParams.get('groupComment') || '';
 
   const [expandedCategories, setExpandedCategories] = useState(() => {
     const initialExpanded = {};
@@ -78,27 +116,16 @@ const EvaluationReviewContent = () => {
     return initialExpanded;
   });
 
-  // Profile data state
-  const [userData, setUserData] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedProfile = localStorage.getItem('evaluatorProfile');
-        if (savedProfile) {
-          const profile = JSON.parse(savedProfile);
-          return {
-            name: profile.name || 'John',
-            initials: profile.initials || 'JS',
-          };
-        }
-      } catch {
-        // Fallback to default
-      }
-    }
-    return {
-      name: 'John',
-      initials: 'JS',
-    };
-  });
+  const headerName =
+    authUserData?.displayName || authUserData?.name || user?.displayName || 'Evaluator';
+  const headerInitials =
+    headerName
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2) || 'EV';
 
   /* Toggle Category Expansion */
   const toggleCategory = (key) => {
@@ -109,6 +136,26 @@ const EvaluationReviewContent = () => {
   };
 
   const handleEdit = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(
+          'ntboa_pending_eval',
+          JSON.stringify({
+            officials,
+            ratings,
+            comments,
+            isGroup: officials.length > 1,
+            groupComment,
+            gameLocation,
+          })
+        );
+        router.push('/evaluator/evaluation-form?edit=1');
+        return;
+      }
+    } catch (storageErr) {
+      console.warn('Could not save draft to sessionStorage, falling back to URL params:', storageErr);
+    }
+
     const params = new URLSearchParams();
     params.set('officials', JSON.stringify(officials));
     params.set('initialRatings', JSON.stringify(ratings));
@@ -136,6 +183,7 @@ const EvaluationReviewContent = () => {
 
       const evaluationData = {
         evaluatorId: user.uid,
+        evaluatorName: headerName,
         scores,
         totalScore,
         maxScore,
@@ -159,13 +207,24 @@ const EvaluationReviewContent = () => {
       if (officials.length > 1) {
         evaluationData.refereeIds = officials.map((off) => off.id).filter(Boolean);
         evaluationData.refereeNames = officials.map((off) => off.name).filter(Boolean);
+        evaluationData.refereeName = evaluationData.refereeNames.join(', ');
       } else {
         evaluationData.refereeId = official.id;
+        evaluationData.refereeName = official.name || 'Referee';
       }
 
       await addDoc(collection(db, 'evaluations'), evaluationData);
 
-      // Update assignment status for all officials in the group
+      // 1. Increment evaluator's evaluationsMade counter
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          evaluationsMade: increment(1),
+        });
+      } catch (countError) {
+        console.error("Error updating evaluator evaluationsMade:", countError);
+      }
+
+      // 2. Update assignment status for all officials in the group
       await Promise.all(officials.map(async (off) => {
         if (!off.assignmentId) return;
         try {
@@ -179,18 +238,40 @@ const EvaluationReviewContent = () => {
         }
       }));
 
-      // Update each official's profile with the Suggested Tier
-      await Promise.all(officials.map(async (off) => {
+      // 3. Update each official's profile with their individual Suggested Tier and rolling aggregates
+      await Promise.all(officials.map(async (off, index) => {
         if (!off.id) return;
         try {
+          const officialKey = `official_${index}`;
+          const refScores =
+            ratings[officialKey] && typeof ratings[officialKey] === 'object'
+              ? ratings[officialKey]
+              : index === 0
+              ? ratings
+              : {};
+          const scoreValues = Object.values(refScores).filter((v) => typeof v === 'number');
+          const officialScore =
+            scoreValues.length > 0 ? scoreValues.reduce((a, b) => a + b, 0) : effectiveScoreForTier;
+          const officialTier = calculateTier(officialScore);
+
           const refereeRef = doc(db, 'users', off.id);
           await updateDoc(refereeRef, {
-            suggestedTier: `Tier ${currentTier.tier}`,
+            suggestedTier: `Tier ${officialTier.tier}`,
+            evaluations: increment(1),
+            evaluationsCount: increment(1),
+            totalScoreSum: increment(officialScore),
           });
         } catch (tierError) {
           console.error("Error updating referee suggested tier for official", off.id, tierError);
         }
       }));
+
+      // Clean up sessionStorage after successful submission
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.removeItem('ntboa_pending_eval');
+        } catch {}
+      }
 
       alert('Evaluation submitted successfully!');
       router.push('/evaluator/home');
@@ -217,8 +298,8 @@ const EvaluationReviewContent = () => {
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
       {/* Header - Same as Game Context */}
       <EvaluatorHeader
-        userName={userData.name}
-        userInitials={userData.initials}
+        userName={headerName}
+        userInitials={headerInitials}
         showBackButton={true}
       />
       <hr className='border-white/20 my-4' />

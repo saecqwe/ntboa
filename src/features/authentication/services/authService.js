@@ -19,10 +19,20 @@ export const login = (email, password) => {
 };
 
 /**
- * Signs out the current user.
+ * Signs out the current user and clears cached session keys to prevent identity bleed on shared devices.
  * @returns {Promise<void>}
  */
-export const logout = () => {
+export const logout = async () => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('ntboa_admin_profile');
+      localStorage.removeItem('evaluatorProfile');
+      sessionStorage.removeItem('ntboa_pending_eval');
+      sessionStorage.clear();
+    } catch (storageErr) {
+      console.warn("Storage cleanup error on logout:", storageErr);
+    }
+  }
   return signOut(auth);
 };
 
@@ -96,13 +106,17 @@ export const updateUserProfile = async (uid, data) => {
     payload.photo = payload.photoURL || '';
   }
 
-  // Guard against Firestore 1,048,487 bytes limit (throw friendly error if exceeded)
-  const maxByteLength = 950000;
-  if (typeof payload.photo === 'string' && payload.photo.length > maxByteLength) {
-    throw new Error('Profile photo is too large to save. Please select an image under 10MB to allow automatic compression.');
-  }
-  if (typeof payload.photoURL === 'string' && payload.photoURL.length > maxByteLength) {
-    throw new Error('Profile photo is too large to save. Please select an image under 10MB to allow automatic compression.');
+  // Reject inline base64 data URIs and oversized URLs before writing to Firestore
+  for (const field of ['photo', 'photoURL', 'profilePhotoUrl']) {
+    const value = payload[field];
+    if (typeof value === 'string') {
+      if (value.trim().toLowerCase().startsWith('data:')) {
+        throw new Error('Inline base64 images cannot be saved directly to Firestore. Upload to Firebase Storage first.');
+      }
+      if (value.length > 2048) {
+        throw new Error('Profile photo URL is invalid or exceeds maximum length.');
+      }
+    }
   }
 
   return updateDoc(docRef, payload);

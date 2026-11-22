@@ -23,29 +23,6 @@ const GameContextContent = () => {
   const singleOfficialName = searchParams.get('official');
   const singleOfficialTier = searchParams.get('tier');
 
-  // Profile data state
-  const [userData, setUserData] = useState({
-    name: 'John',
-    initials: 'JS',
-  });
-
-  // Load profile data
-  useEffect(() => {
-    const loadProfile = () => {
-      const savedProfile = localStorage.getItem('evaluatorProfile');
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        setUserData({
-          name: profile.name || 'John',
-          initials: profile.initials || 'JS',
-        });
-      }
-    };
-    loadProfile();
-    window.addEventListener('profileUpdated', loadProfile);
-    return () => window.removeEventListener('profileUpdated', loadProfile);
-  }, []);
-
   // Form state
   const [location, setLocation] = useState('');
   const [locationsList, setLocationsList] = useState([]);
@@ -74,11 +51,7 @@ const GameContextContent = () => {
 
   return (
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
-      <EvaluatorHeader
-        userName={userData.name}
-        userInitials={userData.initials}
-        showBackButton={true}
-      />
+      <EvaluatorHeader showBackButton={true} />
       <hr className='border-white/20 my-4' />
 
       {/* Game Context Title */}

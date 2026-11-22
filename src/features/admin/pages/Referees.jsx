@@ -41,31 +41,69 @@ const RefereesPage = () => {
   const unsubscribeRef = useRef(null);
 
   useEffect(() => {
-    // Step 1: Set up real-time listener for referees FIRST — shows the list immediately
+    // Pure helper for race-free pre-aggregated stats from the referee document
+    const applyPreAggregatedStats = (referee) => {
+      const evalCount =
+        typeof referee.evaluationsCount === 'number'
+          ? referee.evaluationsCount
+          : typeof referee.evaluations === 'number'
+          ? referee.evaluations
+          : 0;
+
+      const avgScore =
+        typeof referee.evaluationsCount === 'number' &&
+        referee.evaluationsCount > 0 &&
+        typeof referee.totalScoreSum === 'number'
+          ? Number((referee.totalScoreSum / referee.evaluationsCount).toFixed(1))
+          : typeof referee.avgScore === 'number'
+          ? referee.avgScore
+          : 0;
+
+      return {
+        ...referee,
+        evaluations: evalCount,
+        avgScore,
+        suggestedTier: referee.suggestedTier || 'N/A',
+      };
+    };
+
+    // Step 1: Set up real-time listener for referees FIRST — shows the list + pre-aggregated stats immediately
     const q = query(collection(db, 'users'), where('role', '==', 'referee'));
     
     // Track whether we've loaded enrichment data
     let enrichmentData = null;
+    let enrichmentTriggered = false;
 
     const enrichReferees = (refereesList) => {
-      if (!enrichmentData) return refereesList;
+      const baseList = refereesList.map(applyPreAggregatedStats);
+      if (!enrichmentData) return baseList;
       const { allEvaluations, allAssignments } = enrichmentData;
-      const now = new Date();
 
-      return refereesList.map(referee => {
-        const refereeEvals = allEvaluations.filter(e =>
-          e.refereeId === referee.id ||
-          (Array.isArray(e.refereeIds) && e.refereeIds.includes(referee.id)) ||
-          (Array.isArray(e.officials) && e.officials.some(o => o.id === referee.id))
-        );
-        const evalCount = refereeEvals.length;
-        const totalScore = refereeEvals.reduce((acc, curr) => {
-          const score = getOfficialTotalScore(getScoresForReferee(curr, referee.id)) || curr.totalScore || 0;
-          return acc + Number(score);
-        }, 0);
-        const avgScore = evalCount > 0 ? (totalScore / evalCount).toFixed(1) : 0;
-        const latestEval = refereeEvals[0];
-        const suggestedTier = referee.suggestedTier || latestEval?.tier || 'N/A';
+      return baseList.map(referee => {
+        const hasPreAggregated = typeof referee.evaluationsCount === 'number';
+
+        let evalCount = referee.evaluations;
+        let avgScore = referee.avgScore;
+        let suggestedTier = referee.suggestedTier;
+
+        if (!hasPreAggregated && allEvaluations.length > 0) {
+          const refereeEvals = allEvaluations.filter(e =>
+            e.refereeId === referee.id ||
+            (Array.isArray(e.refereeIds) && e.refereeIds.includes(referee.id)) ||
+            (Array.isArray(e.officials) && e.officials.some(o => o.id === referee.id))
+          );
+          evalCount = refereeEvals.length;
+          avgScore = refereeEvals.length > 0
+            ? (refereeEvals.reduce((acc, curr) => {
+                const score = getOfficialTotalScore(getScoresForReferee(curr, referee.id)) || curr.totalScore || 0;
+                return acc + Number(score);
+              }, 0) / refereeEvals.length).toFixed(1)
+            : 0;
+          const latestEval = refereeEvals[0];
+          suggestedTier = referee.suggestedTier !== 'N/A'
+            ? referee.suggestedTier
+            : latestEval?.tier || 'N/A';
+        }
 
         const myAssignments = allAssignments.filter(a =>
           a.refereeIds && a.refereeIds.includes(referee.id)
@@ -94,43 +132,28 @@ const RefereesPage = () => {
       });
     };
 
-    // Hoist unsubscribe into the ref so useEffect cleanup can call it
-    unsubscribeRef.current = onSnapshot(q, (querySnapshot) => {
-      const refereesList = [];
-      querySnapshot.forEach((docSnap) => {
-        refereesList.push({ id: docSnap.id, ...docSnap.data() });
-      });
-
-      const refereesWithStats = enrichReferees(refereesList);
-
-      // Update module-level cache
-      globalRefereesCache = {
-        referees: refereesWithStats,
-        loaded: true,
-        timestamp: Date.now(),
-      };
-
-      setReferees(refereesWithStats);
-      setLoading(false);
-    });
-
-    // Step 2: Load evaluations and assignments in the BACKGROUND
-    const loadEnrichmentData = async () => {
+    // Step 2: Load future assignments (and legacy evaluations fallback ONLY if any referee lacks pre-aggregated counts)
+    const loadEnrichmentData = async (needsEvalFallback) => {
       try {
         const now = new Date();
-        const evalsQuery = query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'), limit(200));
         // Only fetch future assignments instead of the entire collection
         const assignmentsQuery = query(
           collection(db, 'assignments'),
           where('scheduledDate', '>=', now)
         );
 
+        const evalsPromise = needsEvalFallback
+          ? getDocs(query(collection(db, 'evaluations'), orderBy('createdAt', 'desc'), limit(200)))
+          : Promise.resolve(null);
+
         const [evalsSnapshot, assignmentsSnapshot] = await Promise.all([
-          getDocs(evalsQuery),
+          evalsPromise,
           getDocs(assignmentsQuery)
         ]);
 
-        const allEvaluations = evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const allEvaluations = evalsSnapshot
+          ? evalsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+          : [];
         const allAssignments = assignmentsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
         enrichmentData = { allEvaluations, allAssignments };
@@ -150,7 +173,31 @@ const RefereesPage = () => {
       }
     };
 
-    loadEnrichmentData();
+    // Hoist unsubscribe into the ref so useEffect cleanup can call it
+    unsubscribeRef.current = onSnapshot(q, (querySnapshot) => {
+      const refereesList = [];
+      querySnapshot.forEach((docSnap) => {
+        refereesList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      if (!enrichmentTriggered) {
+        enrichmentTriggered = true;
+        const needsEvalFallback = refereesList.some((r) => typeof r.evaluationsCount !== 'number');
+        loadEnrichmentData(needsEvalFallback);
+      }
+
+      const refereesWithStats = enrichReferees(refereesList);
+
+      // Update module-level cache
+      globalRefereesCache = {
+        referees: refereesWithStats,
+        loaded: true,
+        timestamp: Date.now(),
+      };
+
+      setReferees(refereesWithStats);
+      setLoading(false);
+    });
 
     // Cleanup: unsubscribe from Firestore listener when component unmounts
     return () => {
@@ -335,6 +382,8 @@ const RefereesPage = () => {
         // Initialize stats fields
         avgScore: 0,
         evaluations: 0,
+        evaluationsCount: 0,
+        totalScoreSum: 0,
         status: 'Active',
         suggestedTier: '',
       });

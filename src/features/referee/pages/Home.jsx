@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation';
 import { PiGlobeSimpleThin, PiSignOut } from 'react-icons/pi';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { db, auth } from '@/services/firebase/config';
+import { db } from '@/services/firebase/config';
 import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+import { logout } from '@/features/authentication/services/authService';
 import { getScoresForReferee, getOfficialTotalScore } from '@/lib/evaluationUtils';
 
 const RefereeDashboardPage = () => {
@@ -18,16 +18,13 @@ const RefereeDashboardPage = () => {
   const [stats, setStats] = useState({
     totalEvaluations: 0,
     averageScore: 0,
-    averageDelta: '+0.0%', // Placeholder calculation
-    tierProgress: 0,
-    tierMin: 0,
-    tierMin: 0,
-    tierMax: 500 // Example max
+    averageDelta: null,
+    isDeltaPositive: true,
   });
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await logout();
       router.push('/referee/login');
     } catch (error) {
       console.error("Logout failed", error);
@@ -108,14 +105,30 @@ const RefereeDashboardPage = () => {
         sumScore += Number(s) || 0;
       });
 
-      const currentTierPoints = userData.tierPoints || 150;
+      // Calculate real delta against previous average if at least 2 evaluations exist
+      let realDelta = null;
+      let isDeltaPositive = true;
+      if (evalsMap.size >= 2) {
+        const evalsList = Array.from(evalsMap.values()).sort((a, b) => {
+          const tA = a.createdAt?.seconds || 0;
+          const tB = b.createdAt?.seconds || 0;
+          return tB - tA;
+        });
+        const latestScore = getOfficialTotalScore(getScoresForReferee(evalsList[0], userData.uid)) || evalsList[0].totalScore || 0;
+        const pastSum = evalsList.slice(1).reduce((acc, ev) => acc + (getOfficialTotalScore(getScoresForReferee(ev, userData.uid)) || ev.totalScore || 0), 0);
+        const pastAvg = pastSum / (evalsList.length - 1);
+        if (pastAvg > 0) {
+          const diff = ((latestScore - pastAvg) / pastAvg) * 100;
+          isDeltaPositive = diff >= 0;
+          realDelta = diff >= 0 ? `↑ +${diff.toFixed(1)}%` : `↓ ${diff.toFixed(1)}%`;
+        }
+      }
+
       setStats({
         totalEvaluations: total,
         averageScore: total > 0 ? (sumScore / total).toFixed(2) : 0,
-        averageDelta: '+1.2%',
-        tierProgress: currentTierPoints,
-        tierMin: 100,
-        tierMax: 300,
+        averageDelta: realDelta,
+        isDeltaPositive,
       });
     };
 
@@ -141,13 +154,18 @@ const RefereeDashboardPage = () => {
     totalEvaluations,
     averageScore,
     averageDelta,
-    tierProgress,
-    tierMin,
-    tierMax,
+    isDeltaPositive,
   } = stats;
 
+  // Inverted Texas high school tier ranking: Tier 100 is highest varsity rank, Tier 800 is entry-level
+  const parseTierNumber = (tierValue) => {
+    if (!tierValue) return 200;
+    const num = parseInt(String(tierValue).replace(/\D/g, ''), 10);
+    return isNaN(num) ? 200 : num;
+  };
+  const currentTierNum = parseTierNumber(userData?.tier || userData?.ranking || 'Tier 200');
   const clampedProgress = Math.min(
-    Math.max(((tierProgress - tierMin) / (tierMax - tierMin)) * 100, 0),
+    Math.max(((800 - currentTierNum) / (800 - 100)) * 100, 8),
     100
   );
 
@@ -161,11 +179,11 @@ const RefereeDashboardPage = () => {
       icon: '★',
       label: 'Average Score',
       value: averageScore,
-      detail: (
-        <span className='text-[14px] font-semibold text-[#3fd07b] mb-2'>
-          ↑ {averageDelta}
+      detail: averageDelta ? (
+        <span className={`text-[14px] font-semibold mb-2 ${isDeltaPositive ? 'text-[#3fd07b]' : 'text-rose-400'}`}>
+          {averageDelta}
         </span>
-      ),
+      ) : null,
     },
   ];
 
@@ -290,7 +308,7 @@ const RefereeDashboardPage = () => {
                   Tier Progression
                 </p>
                 <span className='text-sm font-semibold text-[#bfa568] heading'>
-                  {tierProgress}
+                  {userData.tier || `Tier ${currentTierNum}`}
                 </span>
               </div>
               <div className='h-3 w-full bg-[#262626] rounded-full overflow-hidden'>
@@ -300,8 +318,8 @@ const RefereeDashboardPage = () => {
                 ></div>
               </div>
               <div className='flex justify-between text-xs text-white/60 uppercase tracking-wide heading'>
-                <span>Tier {tierMax}</span>
-                <span>Tier {tierMin}</span>
+                <span>Tier 800</span>
+                <span>Tier 100</span>
               </div>
             </section>
 

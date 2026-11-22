@@ -30,25 +30,6 @@ const EvaluationDetailsPage = () => {
   const [error, setError] = useState(null);
   const [activeOfficialTab, setActiveOfficialTab] = useState(0);
 
-  // Profile data state
-  const [userData, setUserData] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedProfile = localStorage.getItem('evaluatorProfile');
-        if (savedProfile) {
-          const profile = JSON.parse(savedProfile);
-          return {
-            name: profile.name || 'John',
-            initials: profile.initials || 'JS',
-          };
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    return { name: 'John', initials: 'JS' };
-  });
-
   useEffect(() => {
     const fetchEvaluation = async () => {
       if (params.id) {
@@ -125,11 +106,7 @@ const EvaluationDetailsPage = () => {
 
   return (
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
-      <EvaluatorHeader
-        userName={userData.name}
-        userInitials={userData.initials}
-        showBackButton={true}
-      />
+      <EvaluatorHeader showBackButton={true} />
 
       <div className='flex-1 bg-[#181818]'>
         <main className='px-6 py-6 lg:px-8 lg:py-8'>

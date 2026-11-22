@@ -18,13 +18,36 @@ const EvaluationFormContent = () => {
   const searchParams = useSearchParams();
   const { user } = useAuth();
 
-  const officialsParam = searchParams.get('officials');
-  const isGroupParam = searchParams.get('isGroup') === 'true';
-  const location = searchParams.get('location');
+  const [sessionDraft] = useState(() => {
+    const isEditMode = searchParams.get('edit') === '1';
+    const hasUrlOfficials = Boolean(searchParams.get('officials'));
+    if ((isEditMode || !hasUrlOfficials) && typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('ntboa_pending_eval');
+        if (stored) return JSON.parse(stored);
+      } catch (err) {
+        console.warn('Could not parse sessionStorage draft:', err);
+      }
+    }
+    return null;
+  });
 
-  const officials = officialsParam
-    ? JSON.parse(decodeURIComponent(officialsParam))
-    : [];
+  const officialsParam = searchParams.get('officials');
+  const isGroupParam = sessionDraft
+    ? Boolean(sessionDraft.isGroup)
+    : searchParams.get('isGroup') === 'true';
+  const location = sessionDraft?.gameLocation ?? searchParams.get('location');
+
+  let officials = [];
+  if (Array.isArray(sessionDraft?.officials) && sessionDraft.officials.length > 0) {
+    officials = sessionDraft.officials;
+  } else if (officialsParam) {
+    try {
+      officials = JSON.parse(decodeURIComponent(officialsParam));
+    } catch {
+      officials = [];
+    }
+  }
 
   const [activeTab, setActiveTab] = useState(0);
   const [isGroupEvaluation] = useState(isGroupParam);
@@ -35,6 +58,11 @@ const EvaluationFormContent = () => {
 
   // State for ratings and comments (per official)
   const [ratings, setRatings] = useState(() => {
+    if (sessionDraft?.ratings && typeof sessionDraft.ratings === 'object') {
+      const parsed = sessionDraft.ratings;
+      const hasOfficialKeys = Object.keys(parsed).some((key) => key.startsWith('official_'));
+      return hasOfficialKeys ? parsed : { 'official_0': parsed };
+    }
     const initialRatings = searchParams.get('initialRatings');
     if (initialRatings) {
       try {
@@ -53,6 +81,11 @@ const EvaluationFormContent = () => {
   });
 
   const [comments, setComments] = useState(() => {
+    if (sessionDraft?.comments && typeof sessionDraft.comments === 'object') {
+      const parsed = sessionDraft.comments;
+      const hasOfficialKeys = Object.keys(parsed).some((key) => key.startsWith('official_'));
+      return hasOfficialKeys ? parsed : { 'official_0': parsed };
+    }
     const initialComments = searchParams.get('initialComments');
     if (initialComments) {
       try {
@@ -75,7 +108,9 @@ const EvaluationFormContent = () => {
   const [activeRecordingId, setActiveRecordingId] = useState(null);
 
   // Group evaluation state
-  const [groupComment, setGroupComment] = useState(searchParams.get('groupComment') || '');
+  const [groupComment, setGroupComment] = useState(
+    sessionDraft?.groupComment ?? searchParams.get('groupComment') ?? ''
+  );
   const [isGroupRecording, setIsGroupRecording] = useState(false);
   const [groupRecordingStatus, setGroupRecordingStatus] = useState('');
 
@@ -501,11 +536,32 @@ const EvaluationFormContent = () => {
         return;
       }
 
-      // 4. Prepare Batch Params
+      // 4. Save full evaluation state in sessionStorage to avoid URL length limits/truncation
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(
+            'ntboa_pending_eval',
+            JSON.stringify({
+              officials,
+              ratings,
+              comments,
+              isGroup: isGroupEvaluation,
+              groupComment,
+              gameLocation: location,
+            })
+          );
+          router.push('/evaluator/evaluation-review');
+          return;
+        }
+      } catch (storageErr) {
+        console.warn('Could not save pending evaluation to sessionStorage, falling back to URL params:', storageErr);
+      }
+
+      // 5. Fallback URL Params only if sessionStorage is unavailable
       const params = new URLSearchParams();
-      params.set('officials', JSON.stringify(officials)); // Pass all officials
-      params.set('ratings', JSON.stringify(ratings));     // Pass all ratings map
-      params.set('comments', JSON.stringify(comments));   // Pass all comments map
+      params.set('officials', JSON.stringify(officials));
+      params.set('ratings', JSON.stringify(ratings));
+      params.set('comments', JSON.stringify(comments));
 
       if (isGroupEvaluation) {
         params.set('isGroup', 'true');

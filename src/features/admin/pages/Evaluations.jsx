@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, where, documentId } from 'firebase/firestore';
 import { db } from '@/services/firebase/config';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/features/admin/components/AdminSidebar';
@@ -118,16 +118,52 @@ const EvaluationsPage = () => {
           limit(100)
         );
 
-        // Fetch all users and evaluations in parallel
-        const [usersSnapshot, evaluationsSnapshot] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(evaluationsQuery)
-        ]);
+        const evaluationsSnapshot = await getDocs(evaluationsQuery);
+
+        // Collect only missing user IDs not already denormalized on evaluation docs
+        const missingUserIds = new Set();
+        evaluationsSnapshot.docs.forEach((evalDoc) => {
+          const evaluation = evalDoc.data();
+          const rId = evaluation.refereeId || (Array.isArray(evaluation.refereeIds) ? evaluation.refereeIds[0] : null);
+          const eId = evaluation.evaluatorId;
+
+          const hasRefName = Boolean(
+            (typeof evaluation.refereeName === 'string' && evaluation.refereeName.trim() && evaluation.refereeName !== 'Unknown') ||
+            (Array.isArray(evaluation.refereeNames) && evaluation.refereeNames.length > 0) ||
+            (Array.isArray(evaluation.officials) && evaluation.officials.some((o) => o?.name))
+          );
+          const hasEvalName = Boolean(
+            typeof evaluation.evaluatorName === 'string' &&
+            evaluation.evaluatorName.trim() &&
+            evaluation.evaluatorName !== 'Unknown'
+          );
+
+          if (!hasRefName && rId && !String(rId).startsWith('official_')) {
+            missingUserIds.add(rId);
+          }
+          if (!hasEvalName && eId) {
+            missingUserIds.add(eId);
+          }
+        });
 
         const userMap = {};
-        usersSnapshot.forEach((uDoc) => {
-          userMap[uDoc.id] = uDoc.data();
-        });
+        const missingIds = Array.from(missingUserIds);
+        if (missingIds.length > 0) {
+          const chunks = [];
+          for (let i = 0; i < missingIds.length; i += 30) {
+            chunks.push(missingIds.slice(i, i + 30));
+          }
+          const chunkSnaps = await Promise.all(
+            chunks.map((chunk) =>
+              getDocs(query(collection(db, 'users'), where(documentId(), 'in', chunk)))
+            )
+          );
+          chunkSnaps.forEach((snap) => {
+            snap.forEach((uDoc) => {
+              userMap[uDoc.id] = uDoc.data();
+            });
+          });
+        }
 
         const evaluationsData = evaluationsSnapshot.docs.map((evalDoc) => {
           const evaluation = evalDoc.data();

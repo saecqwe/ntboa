@@ -16,33 +16,6 @@ const NewEvaluationPage = () => {
   const [officials, setOfficials] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Profile data state
-  const [userData, setUserData] = useState({
-    name: 'John',
-    initials: 'JS',
-  });
-
-  // Load profile data
-  useEffect(() => {
-    const loadProfile = () => {
-      const savedProfile = localStorage.getItem('evaluatorProfile');
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        setUserData({
-          name: profile.name || 'John',
-          initials: profile.initials || 'JS',
-        });
-      }
-    };
-    loadProfile();
-    window.addEventListener('storage', loadProfile);
-    window.addEventListener('profileUpdated', loadProfile);
-    return () => {
-      window.removeEventListener('storage', loadProfile);
-      window.removeEventListener('profileUpdated', loadProfile);
-    };
-  }, []);
-
   // Fetch officials
   useEffect(() => {
     const fetchOfficials = async () => {
@@ -110,11 +83,7 @@ const NewEvaluationPage = () => {
 
   return (
     <div className='min-h-screen flex flex-col bg-gradient-secondary'>
-      <EvaluatorHeader
-        userName={userData.name}
-        userInitials={userData.initials}
-        showBackButton={true}
-      />
+      <EvaluatorHeader showBackButton={true} />
 
       {/* Group Evaluation Toggle */}
       <div className='px-6 pt-4 pb-2 lg:px-8'>

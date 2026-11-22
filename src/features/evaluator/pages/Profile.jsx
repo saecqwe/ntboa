@@ -6,6 +6,7 @@ import { FaUser, FaCamera } from 'react-icons/fa';
 import BackButton from '@/ui/BackButton';
 import { useAuth } from '@/authentication/hooks/useAuth';
 import { updateUserProfile, changeUserPassword } from '@/authentication/services/authService';
+import { uploadProfilePhoto, deleteProfilePhoto } from '@/services/firebase/storageService';
 import { compressImage, validateImageFile } from '@/lib/imageUtils';
 
 const EvaluatorProfilePage = () => {
@@ -18,6 +19,7 @@ const EvaluatorProfilePage = () => {
     initials: '',
   });
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false);
   const [password, setPassword] = useState({
     current: '',
     new: '',
@@ -52,9 +54,8 @@ const EvaluatorProfilePage = () => {
       });
 
       const existingPhoto = userData?.photo || userData?.photoURL || null;
-      if (existingPhoto) {
-        setPhotoPreview(existingPhoto);
-      }
+      setPhotoPreview(existingPhoto);
+      setPhotoRemoved(false);
     }
   }, [userData, user]);
 
@@ -100,13 +101,14 @@ const EvaluatorProfilePage = () => {
 
     setMessage('Optimizing photo...');
     try {
-      // Compress and resize client-side to ensure well under Firestore's 1MB limit
+      // Compress and resize client-side before uploading to Firebase Storage
       const compressedPhoto = await compressImage(file, {
         maxWidth: 400,
         maxHeight: 400,
         quality: 0.82,
       });
       setPhotoPreview(compressedPhoto);
+      setPhotoRemoved(false);
       setMessage('');
     } catch (err) {
       console.error('Photo compression error:', err);
@@ -120,6 +122,7 @@ const EvaluatorProfilePage = () => {
 
   const handleRemovePhoto = useCallback(() => {
     setPhotoPreview(null);
+    setPhotoRemoved(true);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -133,21 +136,32 @@ const EvaluatorProfilePage = () => {
     setMessage('');
 
     try {
+      let finalPhotoUrl = photoPreview || '';
+      if (finalPhotoUrl.startsWith('data:')) {
+        setMessage('Uploading photo...');
+        finalPhotoUrl = await uploadProfilePhoto(user.uid, finalPhotoUrl);
+      } else if (photoRemoved) {
+        await deleteProfilePhoto(user.uid);
+        finalPhotoUrl = '';
+      }
+
       await updateUserProfile(user.uid, {
         name: formData.name,
         phone: formData.phone,
-        photo: photoPreview || '',
-        photoURL: photoPreview || '',
+        photo: finalPhotoUrl,
+        photoURL: finalPhotoUrl,
       });
 
+      setPhotoPreview(finalPhotoUrl || null);
+      setPhotoRemoved(false);
       await refreshUserData?.();
       setMessage('Profile updated successfully!');
-      setIsLoading(false);
 
       window.dispatchEvent(new Event('profileUpdated'));
     } catch (error) {
       console.error(error);
       setMessage(error.message || 'Failed to update profile. Please try again.');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -296,6 +310,8 @@ const EvaluatorProfilePage = () => {
               className={`p-4 rounded-lg text-sm font-medium ${
                 message.includes('success')
                   ? 'bg-green-900/50 text-green-400 border border-green-700'
+                  : message.endsWith('...')
+                  ? 'bg-blue-900/40 text-blue-300 border border-blue-700'
                   : 'bg-red-900/50 text-red-400 border border-red-700'
               }`}
             >

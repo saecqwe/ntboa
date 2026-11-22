@@ -117,12 +117,15 @@ export const getEvaluationById = async (evaluationId) => {
  * Uses denormalized metadata when present, and batches any missing referee lookups.
  * Supports optional limit and cursor for pagination.
  */
-export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = 50, lastDoc = null } = {}) => {
+export const getEvaluationsByEvaluator = async (evaluatorId, { pageSize = null, lastDoc = null } = {}) => {
   try {
     const queryConstraints = [
       where('evaluatorId', '==', evaluatorId),
-      limit(pageSize)
     ];
+
+    if (pageSize) {
+      queryConstraints.push(limit(pageSize));
+    }
 
     if (lastDoc) {
       queryConstraints.push(startAfter(lastDoc));
