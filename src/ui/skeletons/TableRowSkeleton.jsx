@@ -17,7 +17,7 @@ export default function TableRowSkeleton({
   return (
     <>
       {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="border-b border-[#3a3a3a] animate-pulse">
+        <tr key={i} className="border-b border-[#3a3a3a] animate-pulse table-skeleton-row">
           {cols.map((w, j) => (
             <td key={j} className="py-4 px-4 lg:px-6">
               <div className={`h-4 ${w} bg-[#2a2a2a] rounded`} />

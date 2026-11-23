@@ -491,7 +491,7 @@ const EvaluatorDetailPage = () => {
           </h1>
         </header>
 
-        <div className='p-4 lg:p-8'>
+        <div className='p-4 lg:p-6 pb-20'>
           <div className='max-w-7xl mx-auto'>
             {/* Evaluator Info Banner */}
             <div className='bg-accent rounded-[20px] px-6 py-6 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
@@ -577,11 +577,37 @@ const EvaluatorDetailPage = () => {
                 Submitted Evaluations
               </h2>
 
-              <div className='overflow-x-auto'>
-                <table className='w-full'>
+              <div
+                tabIndex={0}
+                role='region'
+                aria-labelledby='evaluator-evals-caption'
+                className='responsive-table-wrapper table-scrollbar'
+              >
+                <table
+                  className='responsive-data-table'
+                  style={{
+                    '--col-2': '"Referee(s)"',
+                    '--col-3': '"Location"',
+                    '--col-4': '"Score"',
+                    '--col-5': '"Tier"',
+                    '--col-6': '"Actions"',
+                  }}
+                >
+                  <caption id='evaluator-evals-caption' className='sr-only'>
+                    Submitted Evaluations
+                  </caption>
+                  <colgroup>
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '24%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '13%' }} />
+                  </colgroup>
                   <thead>
                     <tr className='border-b border-[#3a3a3a]'>
                       <th
+                        scope='col'
                         onClick={() => handleSort('date')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Date'
@@ -592,6 +618,7 @@ const EvaluatorDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('refereeDisplay')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Referee'
@@ -602,6 +629,7 @@ const EvaluatorDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('location')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Location'
@@ -612,6 +640,7 @@ const EvaluatorDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('avgScore')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Score'
@@ -622,6 +651,7 @@ const EvaluatorDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('tier')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Tier'
@@ -631,7 +661,10 @@ const EvaluatorDetailPage = () => {
                           {renderSortIcon('tier')}
                         </div>
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
+                      <th
+                        scope='col'
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'
+                      >
                         ACTIONS
                       </th>
                     </tr>
@@ -639,7 +672,7 @@ const EvaluatorDetailPage = () => {
                   <tbody>
                     {evalsLoading && evaluations.length === 0 ? (
                       Array.from({ length: 4 }).map((_, idx) => (
-                        <tr key={idx} className='border-b border-[#3a3a3a] animate-pulse'>
+                        <tr key={idx} className='border-b border-[#3a3a3a] animate-pulse table-skeleton-row'>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-24 bg-[#3a3a3a] rounded' /></td>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-36 bg-[#3a3a3a] rounded' /></td>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-28 bg-[#3a3a3a] rounded' /></td>
@@ -655,31 +688,38 @@ const EvaluatorDetailPage = () => {
                           onClick={() => handleViewMore(evaluation.id)}
                           className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
                         >
-                          <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
+                          <th
+                            scope='row'
+                            className='py-3 lg:py-3.5 px-2 lg:px-4 text-left font-medium text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'
+                          >
                             {evaluation.date}
+                          </th>
+                          <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body min-w-0'>
+                            <span className='block truncate' title={evaluation.refereeDisplay ?? '...'}>
+                              {evaluation.refereeDisplay ?? '...'}
+                            </span>
                           </td>
-                          <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body max-w-[240px] truncate'>
-                            {evaluation.refereeDisplay ?? '...'}
+                          <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body min-w-0'>
+                            <span className='block truncate' title={evaluation.locationDisplay}>
+                              {evaluation.locationDisplay}
+                            </span>
                           </td>
-                          <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body max-w-[200px] truncate'>
-                            {evaluation.locationDisplay}
-                          </td>
-                          <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap'>
+                          <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap tabular-nums'>
                             {evaluation.avgScore > 0 ? `${evaluation.avgScore}/40` : (evaluation.avgScore || 'N/A')}
                           </td>
-                          <td className='py-3 lg:py-4 px-2 lg:px-4'>
-                            <span className='inline-block px-4 py-1.5 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
+                          <td className='py-3 lg:py-3.5 px-2 lg:px-4'>
+                            <span className='inline-block px-3 py-1 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
                               {evaluation.tierDisplay}
                             </span>
                           </td>
-                          <td className='py-3 lg:py-4 px-2 lg:px-4'>
+                          <td className='py-3 lg:py-3.5 px-2 lg:px-4'>
                             <button
                               type='button'
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleViewMore(evaluation.id);
                               }}
-                              className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer'
+                              className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer whitespace-nowrap'
                             >
                               View More
                             </button>
@@ -687,8 +727,8 @@ const EvaluatorDetailPage = () => {
                         </tr>
                       ))
                     ) : (
-                      <tr>
-                        <td colSpan='6' className='text-center py-8 text-[#9ca3af]'>
+                      <tr className='table-empty-row'>
+                        <td colSpan={6} className='text-center py-8 text-[#9ca3af]'>
                           No evaluations submitted by this evaluator yet.
                         </td>
                       </tr>

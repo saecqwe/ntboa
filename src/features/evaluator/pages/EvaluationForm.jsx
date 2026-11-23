@@ -9,6 +9,7 @@ import { db } from '@/services/firebase/config';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 import { OFFICIAL_CATEGORIES as CATEGORY_LIST } from '@/lib/evaluationUtils';
 import { safeGoBack } from '@/lib/navigationHistory';
+import ScrollToTop from '@/ui/ScrollToTop';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,8 @@ const EvaluationFormContent = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { user } = useAuth();
+  const scrollContainerRef = useRef(null);
+  const scrollSentinelRef = useRef(null);
 
   const [sessionDraft] = useState(() => {
     const isEditMode = searchParams.get('edit') === '1';
@@ -647,8 +650,16 @@ const EvaluationFormContent = () => {
       )}
 
       {/* Main Content - Black Background with Scroll */}
-      <div className='flex-1 bg-[#181818] overflow-y-auto overflow-x-hidden'>
-        <div className='px-6 pt-6 pb-10 lg:px-8 lg:pt-8 lg:pb-12'>
+      <div
+        ref={scrollContainerRef}
+        className='flex-1 bg-[#181818] overflow-y-auto overflow-x-hidden relative'
+      >
+        <div
+          ref={scrollSentinelRef}
+          aria-hidden='true'
+          className='scroll-sentinel'
+        />
+        <div className='px-6 pt-6 pb-20 lg:px-8 lg:pt-8 lg:pb-24'>
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             {/* Selected Official Card - Only show if not group tab or single official */}
             {!isGroupTab && (
@@ -871,6 +882,10 @@ const EvaluationFormContent = () => {
             </div>
           </div>
         </div>
+        <ScrollToTop
+          scrollContainerRef={scrollContainerRef}
+          sentinelRef={scrollSentinelRef}
+        />
       </div>
     </div>
   );

@@ -185,3 +185,181 @@ body::-webkit-scrollbar {
 .text-fluid-5xl {
   font-size: clamp(2.25rem, 1.875rem + 1.875vw, 3rem); /* 36px - 48px */
 }
+
+/* Scroll-to-Top button */
+.scroll-sentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 240px;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.scroll-to-top-btn {
+  visibility: hidden;
+  opacity: 0;
+  translate: 0 16px;
+  pointer-events: none;
+  transition:
+    visibility 0.25s,
+    opacity 0.25s ease,
+    translate 0.25s ease,
+    background-color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.scroll-to-top-btn.is-visible {
+  visibility: visible;
+  opacity: 1;
+  translate: 0 0;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-to-top-btn {
+    translate: 0 0;
+    transition: opacity 0.15s ease;
+  }
+}
+
+/* Subtle visible scrollbar utility for scrollable table regions */
+.table-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent !important;
+}
+
+.table-scrollbar::-webkit-scrollbar {
+  display: block !important;
+  width: 6px;
+  height: 6px;
+}
+
+.table-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
+.table-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(240, 115, 11, 0.55);
+}
+
+/* Container-query responsive data tables */
+.responsive-table-wrapper {
+  container-type: inline-size;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.responsive-data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+@container (width < 760px) {
+  .responsive-data-table,
+  .responsive-data-table thead,
+  .responsive-data-table tbody,
+  .responsive-data-table tr,
+  .responsive-data-table th,
+  .responsive-data-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .responsive-data-table thead,
+  .responsive-data-table colgroup {
+    display: none;
+  }
+
+  .responsive-data-table tbody {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) th[scope='row'] {
+    padding: 0 0 0.625rem 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid #3a3a3a;
+    text-align: left;
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.375rem 0;
+    text-align: right;
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td:nth-child(2)::before {
+    content: var(--col-2, '');
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td:nth-child(3)::before {
+    content: var(--col-3, '');
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td:nth-child(4)::before {
+    content: var(--col-4, '');
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td:nth-child(5)::before {
+    content: var(--col-5, '');
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td:nth-child(6)::before {
+    content: var(--col-6, '');
+  }
+
+  .responsive-data-table tbody tr:not(.table-empty-row):not(.table-skeleton-row) td::before {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .responsive-data-table tbody tr.table-empty-row,
+  .responsive-data-table tbody tr.table-empty-row td {
+    border: none;
+    background: transparent;
+    text-align: center;
+    padding: 2rem 1rem;
+  }
+
+  .responsive-data-table tbody tr.table-empty-row td::before,
+  .responsive-data-table tbody tr.table-skeleton-row td::before {
+    content: none;
+  }
+
+  .responsive-data-table tbody tr.table-skeleton-row {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  .responsive-data-table tbody tr.table-skeleton-row td {
+    padding: 0.375rem 0;
+  }
+}

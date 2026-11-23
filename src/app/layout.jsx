@@ -2,6 +2,7 @@ import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 // IMPORT THE PROVIDER
 import { AuthProvider } from "@/features/authentication/components/AuthProvider";
+import ScrollToTop from "@/ui/ScrollToTop";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -24,11 +25,12 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body
         suppressHydrationWarning={true}
-        className={`${inter.variable} ${poppins.variable} antialiased`}
+        className={`${inter.variable} ${poppins.variable} antialiased relative`}
       >
         {/* WRAP CHILDREN WITH AUTHPROVIDER */}
         <AuthProvider>
           {children}
+          <ScrollToTop />
         </AuthProvider>
       </body>
     </html>

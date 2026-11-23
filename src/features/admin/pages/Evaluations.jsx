@@ -416,7 +416,7 @@ const EvaluationsPage = () => {
         </header>
 
         {/* Content */}
-        <div className='p-4 lg:p-8'>
+        <div className='p-4 lg:p-6 pb-20'>
           <div className='max-w-7xl mx-auto'>
             {/* Top Section - Chart and Stats */}
             <div className='grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 mb-6'>
@@ -596,13 +596,18 @@ const EvaluationsPage = () => {
 
             {/* Desktop Evaluations Table (>= 768px) */}
             <div className='hidden md:block bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a] mb-6'>
-              <div className='overflow-x-auto'>
+              <div
+                tabIndex={0}
+                role='region'
+                aria-label='Evaluations list'
+                className='overflow-x-auto table-scrollbar'
+              >
                 <table className='w-full'>
                   <thead>
                     <tr className='bg-[#202020] border-b-2 border-accent/80'>
                       <th
                         onClick={() => handleSort('date')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Date'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -612,7 +617,7 @@ const EvaluationsPage = () => {
                       </th>
                       <th
                         onClick={() => handleSort('evaluatorName')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Evaluator Name'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -622,7 +627,7 @@ const EvaluationsPage = () => {
                       </th>
                       <th
                         onClick={() => handleSort('refereeName')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Official Name'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -632,7 +637,7 @@ const EvaluationsPage = () => {
                       </th>
                       <th
                         onClick={() => handleSort('totalScore')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Total Score'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -642,7 +647,7 @@ const EvaluationsPage = () => {
                       </th>
                       <th
                         onClick={() => handleSort('tier')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Tier'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -650,7 +655,7 @@ const EvaluationsPage = () => {
                           {renderSortIcon('tier')}
                         </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
+                      <th className='text-left py-3 px-3.5 lg:px-4 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap'>
                         COMMENTS
                       </th>
                     </tr>
@@ -659,7 +664,7 @@ const EvaluationsPage = () => {
                     {loading ? (
                       <tr key="loading">
                         <td colSpan='6' className='text-center py-12'>
-                          <p className='text-[15px] text-[#6b7280] text-body'>
+                          <p className='text-sm text-[#9ca3af] text-body'>
                             Loading evaluations...
                           </p>
                         </td>
@@ -671,23 +676,23 @@ const EvaluationsPage = () => {
                           onClick={() => handleViewEvaluation(evaluation)}
                           className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer'
                         >
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                          <td className='py-3 px-3.5 lg:px-4 text-sm text-white text-body whitespace-nowrap'>
                             {evaluation.createdAtDate ? evaluation.createdAtDate.toLocaleDateString() : 'N/A'}
                           </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                          <td className='py-3 px-3.5 lg:px-4 text-sm text-white text-body whitespace-nowrap'>
                             {evaluation.evaluatorName}
                           </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body'>
+                          <td className='py-3 px-3.5 lg:px-4 text-sm text-white text-body'>
                             <div className='font-medium'>{evaluation.refereeName}</div>
-                            <div className='text-[12px] text-[#6b7280]'>{evaluation.game}</div>
+                            <div className='text-xs text-[#9ca3af]'>{evaluation.game}</div>
                           </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                          <td className='py-3 px-3.5 lg:px-4 text-sm text-white text-body whitespace-nowrap tabular-nums'>
                             {evaluation.totalScore}
                           </td>
-                          <td className='py-4 px-4 lg:px-6'>
+                          <td className='py-3 px-3.5 lg:px-4'>
                             <div className='flex flex-wrap items-center gap-2'>
                               <span
-                                className={`inline-block px-4 py-1.5 rounded-full text-fluid-sm font-semibold whitespace-nowrap ${evaluation.tierColor}`}
+                                className={`inline-block px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${evaluation.tierColor}`}
                               >
                                 {evaluation.tier}
                               </span>
@@ -702,8 +707,8 @@ const EvaluationsPage = () => {
                               </span>
                             </div>
                           </td>
-                          <td className='py-4 px-4 lg:px-6'>
-                            <span className='text-fluid-base text-[#ef4444] font-medium'>
+                          <td className='py-3 px-3.5 lg:px-4'>
+                            <span className='text-sm text-[#ef4444] font-medium whitespace-nowrap'>
                               View More
                             </span>
                           </td>

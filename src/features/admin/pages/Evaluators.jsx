@@ -333,10 +333,10 @@ const EvaluatorsPage = () => {
         </header>
 
         {/* Content */}
-        <div className='p-4 lg:p-8'>
-          <div className='max-w-7xl mx-auto'>
+        <div className='p-4 lg:p-6 pb-20'>
+          <div className='max-w-[1400px] mx-auto'>
             {/* Top Bar - Controls */}
-            <div className='flex flex-wrap items-center justify-between gap-4 mb-6'>
+            <div className='flex flex-wrap items-center justify-between gap-4 mb-5'>
               {/* Show Deleted Toggle */}
               <label className='flex items-center gap-3 cursor-pointer select-none bg-[#2a2a2a] border border-[#3a3a3a] px-4 py-2.5 rounded-lg hover:border-[#4a4a4a] transition-colors'>
                 <span className='text-fluid-sm text-[#9ca3af] font-medium'>
@@ -362,23 +362,48 @@ const EvaluatorsPage = () => {
 
               {/* Add Evaluator Button */}
               <button
+                type='button'
                 onClick={handleAddEvaluator}
-                className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 text-white px-6 py-3 rounded-lg font-semibold transition-all active:scale-[0.98] text-fluid-base whitespace-nowrap'
+                className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-semibold transition-all active:scale-[0.98] text-sm whitespace-nowrap cursor-pointer'
               >
-                <HiPlus className='w-5 h-5' />
+                <HiPlus className='w-4 h-4' />
                 Add New Evaluator
               </button>
             </div>
 
             {/* Evaluators Table */}
             <div className='bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a]'>
-              <div className='overflow-x-auto'>
-                <table className='w-full'>
+              <div
+                tabIndex={0}
+                role='region'
+                aria-labelledby='evaluators-table-caption'
+                className='responsive-table-wrapper table-scrollbar'
+              >
+                <table
+                  className='responsive-data-table'
+                  style={{
+                    '--col-2': '"Email"',
+                    '--col-3': '"Evaluations"',
+                    '--col-4': '"Joined"',
+                    '--col-5': '"Actions"',
+                  }}
+                >
+                  <caption id='evaluators-table-caption' className='sr-only'>
+                    Evaluators Directory
+                  </caption>
+                  <colgroup>
+                    <col style={{ width: '28%' }} />
+                    <col style={{ width: '30%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '12%' }} />
+                  </colgroup>
                   <thead>
                     <tr className='bg-[#202020] border-b-2 border-accent/80'>
                       <th
+                        scope='col'
                         onClick={() => handleSort('displayName')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Evaluator Name'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -387,8 +412,9 @@ const EvaluatorsPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('email')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Email'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -397,18 +423,20 @@ const EvaluatorsPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('evaluationsMade')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by # of Evaluations'
                       >
                         <div className='flex items-center gap-1.5'>
-                          <span># OF EVALUATIONS</span>
+                          <span>EVALUATIONS</span>
                           {renderSortIcon('evaluationsMade')}
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('joinedDate')}
-                        className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
+                        className='text-left py-3 px-3.5 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/5 transition-colors group'
                         title='Sort by Joined Date'
                       >
                         <div className='flex items-center gap-1.5'>
@@ -416,7 +444,10 @@ const EvaluatorsPage = () => {
                           {renderSortIcon('joinedDate')}
                         </div>
                       </th>
-                      <th className='text-left py-4 px-4 lg:px-6 text-fluid-sm font-bold text-white uppercase tracking-wider whitespace-nowrap'>
+                      <th
+                        scope='col'
+                        className='text-right py-3 px-3.5 text-xs font-bold text-[#e5e7eb] uppercase tracking-wider whitespace-nowrap'
+                      >
                         ACTIONS
                       </th>
                     </tr>
@@ -431,53 +462,64 @@ const EvaluatorsPage = () => {
                           onClick={() => router.push(`/admin/evaluators/${evaluator.id}`)}
                           className={`border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors cursor-pointer ${evaluator.status === 'Disabled' ? 'opacity-50 grayscale' : ''}`}
                         >
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            <div className='flex items-center gap-2'>
-                              <span>{evaluator.displayName}</span>
+                          <th
+                            scope='row'
+                            className='py-3 px-3.5 text-left font-normal text-sm text-white text-body min-w-0'
+                          >
+                            <div className='flex items-center gap-2 min-w-0'>
+                              <span className='font-semibold truncate' title={evaluator.displayName}>
+                                {evaluator.displayName}
+                              </span>
                               {evaluator.status === 'Disabled' && (
-                                <span className='text-xs font-semibold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30'>
+                                <span className='text-xs font-semibold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 shrink-0'>
                                   Suspended
                                 </span>
                               )}
                             </div>
+                          </th>
+                          <td className='py-3 px-3.5 text-sm text-white text-body min-w-0'>
+                            <span className='block truncate' title={evaluator.email}>
+                              {evaluator.email}
+                            </span>
                           </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
-                            {evaluator.email}
-                          </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body text-center whitespace-nowrap'>
+                          <td className='py-3 px-3.5 text-sm text-white text-body md:text-center whitespace-nowrap tabular-nums'>
                             {evaluator.evaluationsMade || 0}
                           </td>
-                          <td className='py-4 px-4 lg:px-6 text-fluid-base text-white text-body whitespace-nowrap'>
+                          <td className='py-3 px-3.5 text-sm text-white text-body whitespace-nowrap'>
                             {evaluator.joinedDate}
                           </td>
-                          <td className='py-4 px-4 lg:px-6'>
-                            <div className='flex items-center gap-3'>
+                          <td className='py-3 px-3.5 text-right'>
+                            <div className='flex items-center justify-end gap-1.5'>
                               <button
+                                type='button'
                                 onClick={(e) => handleEditEvaluator(evaluator, e)}
-                                className='hover:opacity-80 transition-opacity'
+                                className='p-2 rounded-lg hover:bg-white/10 transition-colors cursor-pointer disabled:cursor-not-allowed'
                                 title='Edit'
+                                aria-label={`Edit ${evaluator.displayName}`}
                                 disabled={evaluator.status === 'Disabled'}
                               >
-                                <HiPencil className={`w-5 h-5 lg:w-6 lg:h-6 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#22c55e]'}`} />
+                                <HiPencil className={`w-4 h-4 lg:w-5 lg:h-5 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#22c55e]'}`} />
                               </button>
                               <button
+                                type='button'
                                 onClick={(e) =>
                                   handleDeleteEvaluator(evaluator.id, e)
                                 }
-                                className='hover:opacity-80 transition-opacity'
+                                className='p-2 rounded-lg hover:bg-white/10 transition-colors cursor-pointer disabled:cursor-not-allowed'
                                 title='Delete'
+                                aria-label={`Remove ${evaluator.displayName}`}
                                 disabled={evaluator.status === 'Disabled'}
                               >
-                                <HiTrash className={`w-5 h-5 lg:w-6 lg:h-6 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#ef4444]'}`} />
+                                <HiTrash className={`w-4 h-4 lg:w-5 lg:h-5 ${evaluator.status === 'Disabled' ? 'text-gray-500' : 'text-[#ef4444]'}`} />
                               </button>
                             </div>
                           </td>
                         </tr>
                       ))
                     ) : (
-                      <tr>
-                        <td colSpan='5' className='text-center py-12'>
-                          <p className='text-[15px] text-[#6b7280] text-body'>
+                      <tr className='table-empty-row'>
+                        <td colSpan={5} className='text-center py-12'>
+                          <p className='text-sm text-[#9ca3af] text-body'>
                             {evaluators.length > 0 && !showDeleted
                               ? 'No active evaluators found.'
                               : 'No evaluators found.'}
@@ -490,8 +532,8 @@ const EvaluatorsPage = () => {
               </div>
 
               {/* Footer */}
-              <div className='px-4 lg:px-6 py-4 border-t border-[#3a3a3a]'>
-                <p className='text-fluid-base text-white text-body text-center'>
+              <div className='px-4 py-3 border-t border-[#3a3a3a]'>
+                <p className='text-xs sm:text-sm text-[#9ca3af] text-body text-center tabular-nums'>
                   Showing {filteredEvaluators.length} {filteredEvaluators.length === 1 ? 'evaluator' : 'evaluators'}
                 </p>
               </div>

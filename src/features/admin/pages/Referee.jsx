@@ -454,7 +454,7 @@ const RefereeDetailPage = () => {
         </header>
 
         {/* Content */}
-        <div className='p-4 lg:p-8'>
+        <div className='p-4 lg:p-6 pb-20'>
           <div className='max-w-7xl mx-auto'>
             {/* Referee Info Banner */}
             <div className='bg-accent  rounded-[20px] px-6 py-6 mb-6'>
@@ -522,11 +522,37 @@ const RefereeDetailPage = () => {
                 Recent Evaluations
               </h2>
 
-              <div className='overflow-x-auto'>
-                <table className='w-full'>
+              <div
+                tabIndex={0}
+                role='region'
+                aria-labelledby='referee-evals-caption'
+                className='responsive-table-wrapper table-scrollbar'
+              >
+                <table
+                  className='responsive-data-table'
+                  style={{
+                    '--col-2': '"Evaluator"',
+                    '--col-3': '"Score"',
+                    '--col-4': '"Tier"',
+                    '--col-5': '"Comment"',
+                    '--col-6': '"Actions"',
+                  }}
+                >
+                  <caption id='referee-evals-caption' className='sr-only'>
+                    Recent Evaluations
+                  </caption>
+                  <colgroup>
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '13%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '23%' }} />
+                    <col style={{ width: '13%' }} />
+                  </colgroup>
                   <thead>
                     <tr className='border-b border-[#3a3a3a]'>
                       <th
+                        scope='col'
                         onClick={() => handleSort('date')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Date'
@@ -537,6 +563,7 @@ const RefereeDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('evaluatorName')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Evaluator Name'
@@ -547,6 +574,7 @@ const RefereeDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('totalScore')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Total Score'
@@ -557,6 +585,7 @@ const RefereeDetailPage = () => {
                         </div>
                       </th>
                       <th
+                        scope='col'
                         onClick={() => handleSort('tier')}
                         className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] hover:text-white uppercase tracking-wider whitespace-nowrap cursor-pointer select-none transition-colors group'
                         title='Sort by Tier Assigned'
@@ -566,10 +595,16 @@ const RefereeDetailPage = () => {
                           {renderSortIcon('tier')}
                         </div>
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
+                      <th
+                        scope='col'
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'
+                      >
                         COMMENT
                       </th>
-                      <th className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'>
+                      <th
+                        scope='col'
+                        className='text-left py-3 px-2 lg:px-4 text-[11px] lg:text-[13px] font-semibold text-[#9ca3af] uppercase tracking-wider whitespace-nowrap'
+                      >
                         ACTIONS
                       </th>
                     </tr>
@@ -577,7 +612,7 @@ const RefereeDetailPage = () => {
                   <tbody>
                     {evalsLoading && evaluations.length === 0 ? (
                       Array.from({ length: 4 }).map((_, idx) => (
-                        <tr key={idx} className='border-b border-[#3a3a3a] animate-pulse'>
+                        <tr key={idx} className='border-b border-[#3a3a3a] animate-pulse table-skeleton-row'>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-24 bg-[#3a3a3a] rounded' /></td>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-32 bg-[#3a3a3a] rounded' /></td>
                           <td className='py-4 px-2 lg:px-4'><div className='h-4 w-14 bg-[#3a3a3a] rounded' /></td>
@@ -592,36 +627,47 @@ const RefereeDetailPage = () => {
                             key={evaluation.id}
                             className='border-b border-[#3a3a3a] hover:bg-[#333333] transition-colors'
                         >
-                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
-                            {evaluation.date}
-                            </td>
-                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'>
-                            {evaluation.evaluatorName ?? '...'}
-                            </td>
-                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap'>
-                            {evaluation.totalScore > 0 ? `${evaluation.totalScore}/40` : (evaluation.totalScore || 'N/A')}
-                            </td>
-                            <td className='py-3 lg:py-4 px-2 lg:px-4'>
-                            <span className='inline-block px-4 py-1.5 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
-                                {evaluation.tier || 'N/A'}
-                            </span>
-                            </td>
-                            <td className='py-3 lg:py-4 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body max-w-[200px] truncate'>
-                            {evaluation.comments?.general || 'No comments'}
-                            </td>
-                            <td className='py-3 lg:py-4 px-2 lg:px-4'>
-                            <button
-                                onClick={() => handleViewMore(evaluation.id)}
-                                className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer'
+                            <th
+                              scope='row'
+                              className='py-3 lg:py-3.5 px-2 lg:px-4 text-left font-medium text-[12px] lg:text-[14px] text-white text-body whitespace-nowrap'
                             >
-                                View More
-                            </button>
+                              {evaluation.date}
+                            </th>
+                            <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body min-w-0'>
+                              <span className='block truncate' title={evaluation.evaluatorName ?? '...'}>
+                                {evaluation.evaluatorName ?? '...'}
+                              </span>
+                            </td>
+                            <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body font-medium whitespace-nowrap tabular-nums'>
+                              {evaluation.totalScore > 0 ? `${evaluation.totalScore}/40` : (evaluation.totalScore || 'N/A')}
+                            </td>
+                            <td className='py-3 lg:py-3.5 px-2 lg:px-4'>
+                              <span className='inline-block px-3 py-1 rounded-full text-[11px] lg:text-[13px] font-semibold whitespace-nowrap bg-[#e5e7eb] text-[#374151]'>
+                                  {evaluation.tier || 'N/A'}
+                              </span>
+                            </td>
+                            <td className='py-3 lg:py-3.5 px-2 lg:px-4 text-[12px] lg:text-[14px] text-white text-body min-w-0'>
+                              <span
+                                className='block truncate'
+                                title={evaluation.comments?.general || 'No comments'}
+                              >
+                                {evaluation.comments?.general || 'No comments'}
+                              </span>
+                            </td>
+                            <td className='py-3 lg:py-3.5 px-2 lg:px-4'>
+                              <button
+                                  type='button'
+                                  onClick={() => handleViewMore(evaluation.id)}
+                                  className='text-[12px] lg:text-[14px] text-[#fbbf24] hover:text-[#f59e0b] font-medium transition-colors cursor-pointer whitespace-nowrap'
+                              >
+                                  View More
+                              </button>
                             </td>
                         </tr>
                         ))
                     ) : (
-                        <tr>
-                            <td colSpan="6" className="text-center py-8 text-[#9ca3af]">No evaluations found for this referee.</td>
+                        <tr className='table-empty-row'>
+                            <td colSpan={6} className="text-center py-8 text-[#9ca3af]">No evaluations found for this referee.</td>
                         </tr>
                     )}
                   </tbody>
