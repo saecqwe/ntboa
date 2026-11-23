@@ -232,7 +232,7 @@ const RefereeDashboardPage = () => {
 
   return (
     <div className='min-h-screen bg-[#0f0f0f] flex flex-col text-white'>
-      <header className='bg-gradient-to-r from-[#c41414] via-[#b41313] to-[#8b0f0f] px-5 lg:px-10 pt-8 pb-7 shadow-lg'>
+      <header className='bg-gradient-to-r from-[#c41414] via-[#b41313] to-[#8b0f0f] px-5 lg:px-10 pt-6 pb-5 shadow-lg'>
         <div className='flex items-center justify-between mb-4'>
           <div className='flex items-center gap-3'>
             {/* <BackButton variant='light' className='shrink-0' /> */}
@@ -241,9 +241,11 @@ const RefereeDashboardPage = () => {
             </div>
 
             <button
+              type='button'
               onClick={handleLogout}
-              className='w-12 h-12 rounded-full bg-red-500/20 hover:bg-red-500/30 flex items-center justify-center transition-all'
+              className='w-12 h-12 rounded-full bg-red-500/20 hover:bg-red-500/30 flex items-center justify-center transition-all cursor-pointer'
               title="Logout"
+              aria-label="Logout"
             >
               <PiSignOut className='w-6 h-6 text-red-200' />
             </button>
@@ -278,7 +280,7 @@ const RefereeDashboardPage = () => {
         </div>
       </header>
 
-      <main className='flex-1 px-5 lg:px-10 py-6 bg-[#0f0f0f]'>
+      <main className='flex-1 px-5 lg:px-10 py-6 pb-20 bg-[#0f0f0f]'>
         <div className='max-w-5xl mx-auto w-full space-y-4 lg:space-y-6'>
           <section className='bg-[#1b1b1b] rounded-[24px] p-5 border border-[#2b2b2b] shadow-[0px_12px_30px_rgba(0,0,0,0.35)]'>
             <div className='flex items-center justify-between mb-3'>
@@ -298,8 +300,11 @@ const RefereeDashboardPage = () => {
                   </span>
                 </div>
                 <div className='flex justify-between gap-3'>
-                  <span className='text-white/60'>Location :</span>
-                  <span className='text-white font-medium text-right'>
+                  <span className='text-white/60 shrink-0'>Location :</span>
+                  <span
+                    className='text-white font-medium text-right truncate min-w-0'
+                    title={upcomingGame.location}
+                  >
                     {upcomingGame.location}
                   </span>
                 </div>
@@ -323,7 +328,7 @@ const RefereeDashboardPage = () => {
                     {label}
                   </p>
                   <div className='flex items-end gap-3'>
-                    <p className='text-[48px] font-bold heading text-white'>
+                    <p className='text-[48px] font-bold heading text-white tabular-nums'>
                       {value}
                     </p>
                     {detail}

@@ -309,7 +309,7 @@ const EvaluationReviewContent = () => {
 
       {/* Main Content - Black Background */}
       <div className='flex-1 bg-[#181818]'>
-        <main className='px-6 py-6 lg:px-8 lg:py-8'>
+        <main className='px-5 py-6 lg:px-8 lg:py-8 pb-24'>
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             <div className='mb-6 lg:mb-8'>
               <div className='bg-[#2a2a2a] rounded-[20px] p-6 lg:p-7 border border-[#3a3a3a] flex flex-col items-center text-center'>
@@ -365,28 +365,50 @@ const EvaluationReviewContent = () => {
             {/* Tier Reference Table */}
             <div className='mb-8 lg:mb-10'>
               <div className='bg-[#2a2a2a] rounded-[20px] overflow-hidden border border-[#3a3a3a]'>
-                <div className="px-6 py-4 border-b border-[#3a3a3a]">
+                <div className="px-5 py-3.5 border-b border-[#3a3a3a]">
                   <h3 className="text-white font-semibold">Chapter Tier Ranking System</h3>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm text-gray-400">
-                    <thead className="bg-[#333] text-gray-200 uppercase font-medium">
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-labelledby="tier-system-caption"
+                  className="responsive-table-wrapper table-scrollbar"
+                >
+                  <table
+                    className="responsive-data-table text-left text-sm text-gray-400"
+                    style={{
+                      '--col-2': '"Score"',
+                      '--col-3': '"Description"',
+                    }}
+                  >
+                    <caption id="tier-system-caption" className="sr-only">
+                      Chapter Tier Ranking System
+                    </caption>
+                    <colgroup>
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '64%' }} />
+                    </colgroup>
+                    <thead className="bg-[#333] text-gray-200 uppercase text-xs font-semibold">
                       <tr>
-                        <th className="px-6 py-3">Tier</th>
-                        <th className="px-6 py-3">Score</th>
-                        <th className="px-6 py-3">Description</th>
+                        <th scope="col" className="px-4 py-3">Tier</th>
+                        <th scope="col" className="px-4 py-3">Score</th>
+                        <th scope="col" className="px-4 py-3">Description</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#3a3a3a]">
                       {TIER_DATA.map((tier) => (
                         <tr key={tier.tier} className={currentTier.tier === tier.tier ? 'bg-accent/10' : ''}>
-                          <td className={`px-6 py-4 font-bold ${currentTier.tier === tier.tier ? 'text-accent' : 'text-white'}`}>
+                          <th
+                            scope="row"
+                            className={`px-4 py-3 text-left font-bold ${currentTier.tier === tier.tier ? 'text-accent' : 'text-white'}`}
+                          >
                             {tier.tier}
-                          </td>
-                          <td className="px-6 py-4 text-white whitespace-nowrap">
+                          </th>
+                          <td className="px-4 py-3 text-white whitespace-nowrap tabular-nums">
                             {tier.range[0]} - {tier.range[1]}
                           </td>
-                          <td className="px-6 py-4 text-gray-300">
+                          <td className="px-4 py-3 text-gray-300">
                             {tier.desc}
                           </td>
                         </tr>

@@ -302,7 +302,7 @@ const EvaluatorProfilePage = () => {
       </header>
 
       {/* Main Content */}
-      <main className='flex-1 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 bg-[#0f0f0f]'>
+      <main className='flex-1 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 pb-24 bg-[#0f0f0f]'>
         <div className='max-w-4xl mx-auto space-y-6 sm:space-y-8'>
           {/* Status Message */}
           {message && (

@@ -293,8 +293,9 @@ const RefereeProfilePage = () => {
             </p>
           </div>
           <button
+            type='button'
             onClick={handleLogout}
-            className='flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-full transition-all text-sm font-medium text-white border border-white/10'
+            className='flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-full transition-all text-sm font-medium text-white border border-white/10 cursor-pointer'
           >
             <PiSignOut className='w-4 h-4' />
             <span>Sign Out</span>
@@ -311,7 +312,7 @@ const RefereeProfilePage = () => {
       </header>
 
       {/* Main Content */}
-      <main className='flex-1 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 bg-[#0f0f0f]'>
+      <main className='flex-1 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 pb-24 bg-[#0f0f0f]'>
         <div className='max-w-4xl mx-auto space-y-6 sm:space-y-8'>
           {/* Status Message */}
           {message && (
@@ -444,7 +445,7 @@ const RefereeProfilePage = () => {
                 <button
                   type='submit'
                   disabled={isLoading}
-                  className='bg-[#c41414] hover:bg-[#d41515] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors min-w-32'
+                  className='bg-[#c41414] hover:bg-[#d41515] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors min-w-32 cursor-pointer'
                 >
                   {isLoading ? 'Saving...' : 'Save Profile'}
                 </button>
@@ -499,7 +500,7 @@ const RefereeProfilePage = () => {
                     !password.new ||
                     !password.confirm
                   }
-                  className='bg-[#c41414] hover:bg-[#d41515] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors min-w-32'
+                  className='bg-[#c41414] hover:bg-[#d41515] disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition-colors min-w-32 cursor-pointer'
                 >
                   {isLoading ? 'Changing...' : 'Change Password'}
                 </button>

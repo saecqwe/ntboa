@@ -63,7 +63,7 @@ const GameContextContent = () => {
 
       {/* Main Content - Black Background */}
       <div className='flex-1 bg-[#181818]'>
-        <main className='px-6 py-6 lg:px-8 lg:py-8'>
+        <main className='px-5 py-6 lg:px-8 lg:py-8 pb-20'>
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             {/* Selected Official Card */}
             <div className='mb-6 lg:mb-8 space-y-3'>

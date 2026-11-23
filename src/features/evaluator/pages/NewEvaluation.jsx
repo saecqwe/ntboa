@@ -143,7 +143,7 @@ const NewEvaluationPage = () => {
 
       {/* Main Content - Black Background */}
       <div className='flex-1 bg-[#181818]'>
-        <main className='px-6 py-6 lg:px-8 lg:py-8'>
+        <main className='px-5 py-6 lg:px-8 lg:py-8 pb-24'>
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             {/* Officials List */}
             <div className='space-y-3 lg:space-y-3'>
@@ -164,16 +164,16 @@ const NewEvaluationPage = () => {
                         : 'border border-[#ffff]/20 hover:border-[#4a4a4a]'
                     }`}
                   >
-                    <div className='flex items-start justify-between'>
+                    <div className='flex items-start justify-between gap-3'>
                       {/* Left side - Official Info */}
-                      <div className='flex-1 text-left'>
+                      <div className='flex-1 min-w-0 text-left'>
                         {/* Official Name */}
-                        <div className='text-[17px] lg:text-[18px] font-medium text-white text-body mb-1'>
+                        <div className='text-[17px] lg:text-[18px] font-medium text-white text-body mb-1 truncate' title={official.name}>
                           {official.name}
                         </div>
 
                         {/* Location */}
-                        <div className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body mb-1'>
+                        <div className='text-[14px] lg:text-[15px] text-[#9ca3af] text-body mb-1 truncate' title={official.location}>
                           📍 {official.location}
                         </div>
 

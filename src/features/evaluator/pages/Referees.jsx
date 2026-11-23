@@ -1,18 +1,40 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { createUser } from '@/features/authentication/services/authService';
 import { db, functions } from '@/services/firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
-import { HiPlus, HiTrash, HiX, HiSearch } from 'react-icons/hi';
+import { HiPlus, HiTrash, HiX, HiSearch, HiChevronUp, HiChevronDown } from 'react-icons/hi';
 import toast, { Toaster } from 'react-hot-toast';
+import { normalizeTier } from '@/lib/evaluationUtils';
+
+const getRefereeStats = (referee) => {
+  const evalCount =
+    typeof referee.evaluationsCount === 'number'
+      ? referee.evaluationsCount
+      : typeof referee.evaluations === 'number'
+      ? referee.evaluations
+      : 0;
+
+  const avgScore =
+    typeof referee.evaluationsCount === 'number' &&
+    referee.evaluationsCount > 0 &&
+    typeof referee.totalScoreSum === 'number'
+      ? Number((referee.totalScoreSum / referee.evaluationsCount).toFixed(1))
+      : typeof referee.avgScore === 'number'
+      ? referee.avgScore
+      : 0;
+
+  return { evalCount, avgScore };
+};
 
 const EvaluatorRefereesPage = () => {
   const { user, userData } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'displayName', direction: 'asc' });
   const [showAddModal, setShowAddModal] = useState(false);
   const [referees, setReferees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,14 +72,65 @@ const EvaluatorRefereesPage = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- Filtered list ---
-  const filteredReferees = referees.filter((ref) => {
+  // --- Filtered & sorted list ---
+  const filteredReferees = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return (
-      (ref.displayName && ref.displayName.toLowerCase().includes(q)) ||
-      (ref.email && ref.email.toLowerCase().includes(q))
+    return referees.filter(
+      (ref) =>
+        (ref.displayName && ref.displayName.toLowerCase().includes(q)) ||
+        (ref.email && ref.email.toLowerCase().includes(q))
     );
-  });
+  }, [referees, searchQuery]);
+
+  const sortedReferees = useMemo(() => {
+    const list = [...filteredReferees];
+    const { key, direction } = sortConfig;
+    const factor = direction === 'asc' ? 1 : -1;
+
+    const parseTierNumber = (tier) => {
+      if (!tier) return -1;
+      const num = parseInt(String(tier).replace(/\D/g, ''), 10);
+      return isNaN(num) ? -1 : num;
+    };
+
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (key) {
+        case 'tier': {
+          const tierA = parseTierNumber(a.tier);
+          const tierB = parseTierNumber(b.tier);
+          comparison =
+            tierA !== tierB
+              ? tierA - tierB
+              : (a.tier || '').localeCompare(b.tier || '');
+          break;
+        }
+        case 'avgScore':
+          comparison = getRefereeStats(a).avgScore - getRefereeStats(b).avgScore;
+          break;
+        case 'status':
+          comparison = (a.status || 'Active').localeCompare(b.status || 'Active', undefined, {
+            sensitivity: 'base',
+          });
+          break;
+        case 'displayName':
+        default:
+          comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, {
+            sensitivity: 'base',
+          });
+          break;
+      }
+
+      if (comparison === 0 && key !== 'displayName') {
+        comparison = (a.displayName || '').localeCompare(b.displayName || '', undefined, {
+          sensitivity: 'base',
+        });
+      }
+
+      return comparison * factor;
+    });
+  }, [filteredReferees, sortConfig]);
 
   const activeCount = referees.filter((r) => r.status !== 'Disabled').length;
 
@@ -150,48 +223,96 @@ const EvaluatorRefereesPage = () => {
       <EvaluatorHeader showBackButton={true} />
 
       <div className='bg-gradient-primary rounded-tl-[60px] overflow-hidden flex-1 lg:rounded-tl-[80px]'>
-        <main className='px-6 py-8 lg:px-8 lg:py-12'>
+        <main className='px-5 py-6 lg:px-8 lg:py-8 pb-20'>
           <div className='max-w-5xl mx-auto'>
 
             {/* Page Title */}
-            <div className='mb-8'>
-              <h2 className='text-[32px] lg:text-[38px] font-bold text-white heading leading-none mb-2'>
+            <div className='mb-5'>
+              <h2 className='text-2xl lg:text-3xl font-bold text-white heading leading-none mb-1.5'>
                 Referee Roster
               </h2>
-              <p className='text-white/60 text-[15px]'>
+              <p className='text-white/60 text-sm'>
                 Manage all referees in the system
               </p>
             </div>
 
-            {/* Stats Banner */}
-            <div className='grid grid-cols-2 gap-4 mb-8'>
-              <div className='bg-white/10 rounded-[20px] px-5 py-4 border border-white/10'>
-                <div className='text-white/60 text-[13px] mb-1'>Total Referees</div>
-                <div className='text-[32px] font-bold text-white heading'>{referees.length}</div>
+            {/* Compact KPI Strip */}
+            <div className='bg-accent rounded-2xl px-5 py-3.5 mb-5 flex flex-wrap items-center justify-between gap-3'>
+              <div className='flex items-baseline gap-3'>
+                <span className='text-xs uppercase tracking-wider text-white/85 font-medium'>
+                  Total Referees
+                </span>
+                <span className='text-2xl lg:text-3xl font-bold text-white heading leading-tight tabular-nums'>
+                  {referees.length}
+                </span>
               </div>
-              <div className='bg-white/10 rounded-[20px] px-5 py-4 border border-white/10'>
-                <div className='text-white/60 text-[13px] mb-1'>Active</div>
-                <div className='text-[32px] font-bold text-emerald-400 heading'>{activeCount}</div>
+              <div className='flex flex-wrap items-center gap-2'>
+                <span className='bg-black/15 px-3 py-1.5 rounded-xl text-xs font-medium text-white/95 tabular-nums'>
+                  Active: {activeCount}
+                </span>
+                {searchQuery.trim() && (
+                  <span className='bg-black/25 px-3 py-1.5 rounded-xl text-xs font-semibold text-white tabular-nums'>
+                    Matching: {filteredReferees.length}
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Search + Add Button */}
-            <div className='flex flex-col sm:flex-row gap-3 mb-6'>
-              <div className='relative flex-1'>
-                <HiSearch className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 w-5 h-5' />
+            {/* Search + Sort + Add Button */}
+            <div className='flex flex-col sm:flex-row gap-3 mb-5'>
+              <div className='relative flex-1 min-w-0'>
+                <HiSearch className='absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 w-4 h-4' />
                 <input
                   type='text'
                   placeholder='Search by name or email...'
+                  aria-label='Search referees by name or email'
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className='w-full bg-white/10 text-white placeholder-white/40 rounded-xl pl-11 pr-4 py-3 border border-white/10 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all'
+                  className='w-full bg-white/10 text-white placeholder-white/40 rounded-xl pl-10 pr-4 py-2.5 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all'
                 />
               </div>
+              <div className='flex items-center gap-2'>
+                <select
+                  aria-label='Sort referees by'
+                  value={sortConfig.key}
+                  onChange={(e) =>
+                    setSortConfig((prev) => ({
+                      key: e.target.value,
+                      direction: prev.key === e.target.value ? prev.direction : 'asc',
+                    }))
+                  }
+                  className='bg-white/10 text-white rounded-xl px-3 py-2.5 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all'
+                >
+                  <option value='displayName' className='bg-[#1e1e1e]'>Sort: Name</option>
+                  <option value='tier' className='bg-[#1e1e1e]'>Sort: Current Tier</option>
+                  <option value='avgScore' className='bg-[#1e1e1e]'>Sort: Avg Score</option>
+                  <option value='status' className='bg-[#1e1e1e]'>Sort: Status</option>
+                </select>
+                <button
+                  type='button'
+                  onClick={() =>
+                    setSortConfig((prev) => ({
+                      ...prev,
+                      direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                    }))
+                  }
+                  aria-label={`Sort direction: ${sortConfig.direction === 'asc' ? 'Ascending' : 'Descending'}. Click to toggle.`}
+                  title={sortConfig.direction === 'asc' ? 'Ascending' : 'Descending'}
+                  className='bg-white/10 hover:bg-white/15 text-white rounded-xl p-2.5 border border-white/10 transition-colors cursor-pointer'
+                >
+                  {sortConfig.direction === 'asc' ? (
+                    <HiChevronUp className='w-4 h-4 text-accent' />
+                  ) : (
+                    <HiChevronDown className='w-4 h-4 text-accent' />
+                  )}
+                </button>
+              </div>
               <button
+                type='button'
                 onClick={() => setShowAddModal(true)}
-                className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 active:scale-[0.98] text-white px-6 py-3 rounded-xl font-semibold transition-all whitespace-nowrap'
+                className='flex items-center justify-center gap-2 bg-accent hover:opacity-90 active:scale-[0.98] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all whitespace-nowrap cursor-pointer'
               >
-                <HiPlus className='w-5 h-5' />
+                <HiPlus className='w-4 h-4' />
                 Add Referee
               </button>
             </div>
@@ -202,18 +323,37 @@ const EvaluatorRefereesPage = () => {
                 <div className='w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-3' />
                 Loading referees...
               </div>
-            ) : filteredReferees.length === 0 ? (
+            ) : sortedReferees.length === 0 ? (
               <div className='text-center py-16 text-white/40 bg-white/5 rounded-[20px] border border-white/10'>
                 {searchQuery ? 'No referees match your search.' : 'No referees found.'}
               </div>
             ) : (
-              <div className='space-y-3'>
-                {filteredReferees.map((referee) => {
+              <div className='space-y-2.5'>
+                {sortedReferees.map((referee) => {
                   const isDisabled = referee.status === 'Disabled';
+                  const { evalCount, avgScore } = getRefereeStats(referee);
+                  const hasRecommended = Boolean(referee.suggestedTier && referee.suggestedTier !== 'N/A');
+                  const tierChanged =
+                    hasRecommended &&
+                    normalizeTier(referee.suggestedTier) !== normalizeTier(referee.tier);
+
+                  const recommendedPill = hasRecommended ? (
+                    <span
+                      title={`Recommended: ${referee.suggestedTier}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${
+                        tierChanged
+                          ? 'bg-sky-500/15 text-sky-300 border-sky-400/30'
+                          : 'bg-white/5 text-[#d1d5db] border-white/15'
+                      }`}
+                    >
+                      {tierChanged ? `→ ${referee.suggestedTier}` : `Rec: ${referee.suggestedTier}`}
+                    </span>
+                  ) : null;
+
                   return (
                     <div
                       key={referee.id}
-                      className={`bg-white/6 rounded-[20px] px-5 py-4 border transition-all ${
+                      className={`bg-white/6 rounded-2xl px-4 py-3.5 border transition-all ${
                         isDisabled
                           ? 'border-red-500/20 opacity-50 grayscale'
                           : 'border-white/10 hover:bg-white/10'
@@ -221,8 +361,8 @@ const EvaluatorRefereesPage = () => {
                     >
                       <div className='flex items-center justify-between gap-4'>
                         {/* Left – Avatar + Info */}
-                        <div className='flex items-center gap-4 flex-1 min-w-0'>
-                          <div className='w-11 h-11 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-sm shrink-0'>
+                        <div className='flex items-center gap-3.5 flex-1 min-w-0'>
+                          <div className='w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-xs shrink-0'>
                             {referee.displayName
                               ? referee.displayName
                                   .trim()
@@ -233,26 +373,43 @@ const EvaluatorRefereesPage = () => {
                               : 'RF'}
                           </div>
                           <div className='min-w-0'>
-                            <div className='text-white font-semibold text-[15px] heading truncate'>
+                            <div
+                              className='text-white font-semibold text-sm sm:text-[15px] heading truncate'
+                              title={referee.displayName || 'Unnamed Referee'}
+                            >
                               {referee.displayName || 'Unnamed Referee'}
                             </div>
-                            <div className='text-white/50 text-[13px] truncate'>
+                            <div
+                              className='text-white/55 text-xs truncate'
+                              title={referee.email}
+                            >
                               {referee.email}
                             </div>
                           </div>
                         </div>
 
-                        {/* Middle – Tier + Status */}
-                        <div className='hidden sm:flex items-center gap-3'>
+                        {/* Middle – Tier, Recommended, Avg Score & Status */}
+                        <div className='hidden sm:flex items-center gap-3 shrink-0'>
+                          <div className='text-right mr-1'>
+                            <div className='text-xs font-semibold text-white tabular-nums'>
+                              {evalCount > 0 ? `${avgScore} avg` : '—'}
+                            </div>
+                            <div className='text-[11px] text-white/50 tabular-nums'>
+                              {evalCount} {evalCount === 1 ? 'eval' : 'evals'}
+                            </div>
+                          </div>
+                          <div className='flex items-center gap-1.5'>
+                            <span
+                              className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${getTierColor(
+                                referee.tier
+                              )}`}
+                            >
+                              {referee.tier || 'N/A'}
+                            </span>
+                            {recommendedPill}
+                          </div>
                           <span
-                            className={`text-[12px] font-semibold px-3 py-1 rounded-full border ${getTierColor(
-                              referee.tier
-                            )}`}
-                          >
-                            {referee.tier || 'N/A'}
-                          </span>
-                          <span
-                            className={`text-[12px] font-semibold px-3 py-1 rounded-full border ${
+                            className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
                               isDisabled
                                 ? 'bg-red-500/20 text-red-300 border-red-500/30'
                                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -265,8 +422,10 @@ const EvaluatorRefereesPage = () => {
                         {/* Right – Remove Button */}
                         {!isDisabled && (
                           <button
+                            type='button'
                             onClick={(e) => handleRemoveReferee(referee, e)}
-                            className='shrink-0 w-9 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 flex items-center justify-center transition-all'
+                            aria-label={`Remove ${referee.displayName}`}
+                            className='shrink-0 w-9 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/25 border border-red-500/20 flex items-center justify-center transition-all cursor-pointer'
                             title='Remove Referee'
                           >
                             <HiTrash className='w-4 h-4 text-red-400' />
@@ -274,23 +433,30 @@ const EvaluatorRefereesPage = () => {
                         )}
                       </div>
 
-                      {/* Mobile – Tier + Status row */}
-                      <div className='sm:hidden flex items-center gap-2 mt-3 pt-3 border-t border-white/10'>
-                        <span
-                          className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${getTierColor(
-                            referee.tier
-                          )}`}
-                        >
-                          {referee.tier || 'N/A'}
-                        </span>
-                        <span
-                          className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                            isDisabled
-                              ? 'bg-red-500/20 text-red-300 border-red-500/30'
-                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                          }`}
-                        >
-                          {isDisabled ? 'Disabled' : 'Active'}
+                      {/* Mobile – Tier, Recommended, Avg Score & Status row */}
+                      <div className='sm:hidden flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-white/10'>
+                        <div className='flex flex-wrap items-center gap-1.5'>
+                          <span
+                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${getTierColor(
+                              referee.tier
+                            )}`}
+                          >
+                            {referee.tier || 'N/A'}
+                          </span>
+                          {recommendedPill}
+                          <span
+                            className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                              isDisabled
+                                ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            {isDisabled ? 'Disabled' : 'Active'}
+                          </span>
+                        </div>
+                        <span className='text-[11px] text-white/65 font-medium tabular-nums'>
+                          {evalCount > 0 ? `${avgScore} avg · ` : ''}
+                          {evalCount} {evalCount === 1 ? 'eval' : 'evals'}
                         </span>
                       </div>
                     </div>
@@ -300,9 +466,9 @@ const EvaluatorRefereesPage = () => {
             )}
 
             {/* Showing count */}
-            {!loading && filteredReferees.length > 0 && (
-              <p className='text-center text-white/40 text-[13px] mt-6'>
-                Showing {filteredReferees.length} of {referees.length} referees
+            {!loading && sortedReferees.length > 0 && (
+              <p className='text-center text-white/45 text-xs sm:text-sm mt-5 tabular-nums'>
+                Showing {sortedReferees.length} of {referees.length} referees
               </p>
             )}
           </div>

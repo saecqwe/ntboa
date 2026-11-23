@@ -1,19 +1,25 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { IoSearchOutline, IoFilterOutline } from 'react-icons/io5';
+import { IoSearchOutline } from 'react-icons/io5';
 import EvaluatorHeader from '@/features/evaluator/components/EvaluatorHeader';
 import { getEvaluationsByEvaluator } from '@/features/evaluator/services/evaluationService';
 import { useAuth } from '@/features/authentication/hooks/useAuth';
 
+const getEvalTimestamp = (ev) => {
+  if (ev.date instanceof Date && !isNaN(ev.date)) return ev.date.getTime();
+  if (ev.createdAt?.seconds) return ev.createdAt.seconds * 1000;
+  return 0;
+};
+
 const EvaluationsPage = () => {
   const { user } = useAuth();
-  const router = useRouter();
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
   const [visibleCount, setVisibleCount] = useState(20);
 
   useEffect(() => {
@@ -32,14 +38,36 @@ const EvaluationsPage = () => {
     loadEvaluations();
   }, [user]);
 
-  const filteredEvaluations = evaluations.filter((ev) => {
+  const filteredEvaluations = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return (
-      ev.refereeName?.toLowerCase().includes(term) ||
-      ev.location?.toLowerCase().includes(term) ||
-      ev.tier?.toLowerCase().includes(term)
-    );
-  });
+    const filtered = evaluations.filter((ev) => {
+      const matchesSearch =
+        ev.refereeName?.toLowerCase().includes(term) ||
+        ev.location?.toLowerCase().includes(term) ||
+        ev.tier?.toLowerCase().includes(term);
+
+      if (!matchesSearch) return false;
+      if (statusFilter === 'published') return ev.isPublished === true;
+      if (statusFilter === 'unpublished') return ev.isPublished !== true;
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest':
+          return getEvalTimestamp(a) - getEvalTimestamp(b);
+        case 'score':
+          return (Number(b.totalScore) || 0) - (Number(a.totalScore) || 0);
+        case 'name':
+          return (a.refereeName || '').localeCompare(b.refereeName || '', undefined, {
+            sensitivity: 'base',
+          });
+        case 'newest':
+        default:
+          return getEvalTimestamp(b) - getEvalTimestamp(a);
+      }
+    });
+  }, [evaluations, searchTerm, statusFilter, sortBy]);
 
   const visibleEvaluations = filteredEvaluations.slice(0, visibleCount);
 
@@ -49,27 +77,28 @@ const EvaluationsPage = () => {
 
       <div className='bg-gradient-primary rounded-tl-[60px] overflow-hidden flex-1'>
         <div className='rounded-tl-[60px] flex-1 overflow-hidden lg:rounded-tl-[80px] h-full'>
-          <main className='px-6 py-8 lg:px-8 lg:py-12 min-h-full'>
+          <main className='px-5 py-6 lg:px-8 lg:py-8 pb-20 min-h-full'>
             <div className='max-w-md mx-auto lg:max-w-6xl'>
-              <div className='mb-8 lg:mb-10'>
-                <h2 className='text-[32px] lg:text-[38px] font-bold text-white heading leading-none mb-2'>
+              <div className='mb-5 lg:mb-6'>
+                <h2 className='text-2xl lg:text-3xl font-bold text-white heading leading-none mb-1.5'>
                   Evaluations
                 </h2>
-                <div className='text-[#FFFFFF]/60 text-[15px] lg:text-[16px] text-body'>
+                <div className='text-[#FFFFFF]/60 text-sm text-body'>
                   View and manage your evaluation history
                 </div>
               </div>
 
-              {/* Search and Filter */}
-              <div className='mb-6 flex gap-4'>
-                <div className='relative flex-1'>
-                  <div className='absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none'>
-                    <IoSearchOutline className='text-gray-400 text-xl' />
+              {/* Search, Filter and Sort */}
+              <div className='mb-6 flex flex-col sm:flex-row gap-3'>
+                <div className='relative flex-1 min-w-0'>
+                  <div className='absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none'>
+                    <IoSearchOutline className='text-gray-400 text-lg' />
                   </div>
                   <input
                     type='text'
                     placeholder='Search referee, location...'
-                    className='w-full bg-[#FFFFFF]/6 border border-[#FFFFFF]/20 text-white rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:border-accent transition-colors placeholder-gray-500'
+                    aria-label='Search evaluations by referee, location, or tier'
+                    className='w-full bg-[#FFFFFF]/6 border border-[#FFFFFF]/20 text-white rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors placeholder-gray-500'
                     value={searchTerm}
                     onChange={(e) => {
                       setSearchTerm(e.target.value);
@@ -77,9 +106,32 @@ const EvaluationsPage = () => {
                     }}
                   />
                 </div>
-                {/* <button className='bg-[#FFFFFF]/6 border border-[#FFFFFF]/20 rounded-xl px-4 py-3 text-white hover:bg-[#FFFFFF]/10 transition-colors'>
-                  <IoFilterOutline className='text-xl' />
-                </button> */}
+                <div className='flex gap-2'>
+                  <select
+                    aria-label='Filter evaluations by status'
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setVisibleCount(20);
+                    }}
+                    className='flex-1 sm:flex-none bg-[#FFFFFF]/6 border border-[#FFFFFF]/20 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors'
+                  >
+                    <option value='all' className='bg-[#1e1e1e]'>All Statuses</option>
+                    <option value='published' className='bg-[#1e1e1e]'>Published</option>
+                    <option value='unpublished' className='bg-[#1e1e1e]'>Unpublished</option>
+                  </select>
+                  <select
+                    aria-label='Sort evaluations by'
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className='flex-1 sm:flex-none bg-[#FFFFFF]/6 border border-[#FFFFFF]/20 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors'
+                  >
+                    <option value='newest' className='bg-[#1e1e1e]'>Sort: Newest</option>
+                    <option value='oldest' className='bg-[#1e1e1e]'>Sort: Oldest</option>
+                    <option value='score' className='bg-[#1e1e1e]'>Sort: Highest Score</option>
+                    <option value='name' className='bg-[#1e1e1e]'>Sort: Name</option>
+                  </select>
+                </div>
               </div>
 
               {/* Evaluations List */}
@@ -87,33 +139,43 @@ const EvaluationsPage = () => {
                 <div className='text-white text-center py-8'>Loading...</div>
               ) : visibleEvaluations.length > 0 ? (
                 <>
-                  <div className='space-y-3 lg:space-y-3'>
+                  <div className='space-y-2.5'>
                     {visibleEvaluations.map((evaluation) => (
                       <Link
                         href={`/evaluator/evaluation/${evaluation.id}`}
                         key={evaluation.id}
-                        className='bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all cursor-pointer'
+                        className='bg-[#FFFFFF]/6 rounded-2xl px-4 py-3.5 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all cursor-pointer'
                       >
-                        {/* Left Side - Name and Date */}
-                        <div className='flex-1 pr-4'>
-                          <div className='text-[18px] lg:text-[19px] font-semibold text-white heading mb-0.5 leading-tight'>
+                        {/* Left Side - Name, Date & Location */}
+                        <div className='flex-1 min-w-0 pr-3'>
+                          <div
+                            className='text-base lg:text-lg font-semibold text-white heading mb-0.5 leading-tight truncate'
+                            title={evaluation.refereeName}
+                          >
                             {evaluation.refereeName}
                           </div>
-                          <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-tight'>
-                            {evaluation.date?.toLocaleDateString ? evaluation.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                          <div className='text-xs lg:text-sm text-[#9ca3af] text-body leading-tight truncate'>
+                            {evaluation.date?.toLocaleDateString
+                              ? evaluation.date.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : ''}
+                            {evaluation.location ? ` · ${evaluation.location}` : ''}
                           </div>
                         </div>
 
                         {/* Vertical Divider */}
-                        <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4'></div>
+                        <div className='w-px h-11 bg-[#FFFFFF]/10 mx-2.5 lg:mx-4 shrink-0'></div>
 
                         {/* Right Side - Score, Tier, and Publish Status */}
-                        <div className='flex flex-col items-end gap-1.5 min-w-[90px] lg:min-w-[110px]'>
+                        <div className='flex flex-col items-end gap-1.5 shrink-0'>
                           <div className='flex items-center gap-2'>
-                            <div className='text-base text-white heading leading-none'>
+                            <div className='text-sm sm:text-base font-semibold text-white heading leading-none tabular-nums'>
                               {evaluation.totalScore}/{evaluation.maxScore || 40}
                             </div>
-                            <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
+                            <div className='bg-[#FFFFFF]/6 text-[#d1d5db] text-[11px] lg:text-xs font-medium px-2.5 py-0.5 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>
                               {evaluation.tier || 'N/A'}
                             </div>
                           </div>

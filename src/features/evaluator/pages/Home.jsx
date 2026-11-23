@@ -193,7 +193,7 @@ const EvaluatorHome = () => {
 
       <div className='bg-gradient-primary rounded-tl-[60px] overflow-hidden'>
         <div className='rounded-tl-[60px] flex-1 overflow-hidden lg:rounded-tl-[80px]'>
-          <main className='px-6 py-8 lg:px-8 lg:py-12'>
+          <main className='px-5 py-6 lg:px-8 lg:py-10 pb-20'>
             <div className='max-w-md mx-auto lg:max-w-6xl'>
               {/* Welcome Section */}
               <div className='mb-8 lg:mb-10'>
@@ -234,7 +234,7 @@ const EvaluatorHome = () => {
                           </div>
                           
                           <div className="relative z-10 mt-auto">
-                            <div className="text-[32px] font-bold leading-none mb-1 text-white">
+                            <div className="text-[32px] font-bold leading-none mb-1 text-white tabular-nums">
                                 {card.value}
                             </div>
                             <div className={`text-[13px] font-medium tracking-wide ${isActive ? 'text-white/90' : 'text-[#9ca3af]'}`}>
@@ -394,8 +394,11 @@ const EvaluatorHome = () => {
                             className='cursor-pointer bg-[#FFFFFF]/6 rounded-[20px] px-5 py-4 lg:px-5 lg:py-4 flex items-center border border-[#FFFFFF]/20 hover:bg-[#FFFFFF]/10 transition-all'
                           >
                             {/* Left Side - Name and Date */}
-                            <div className='flex-1 pr-4'>
-                              <div className='text-[18px] lg:text-[19px] font-semibold text-white heading mb-0.5 leading-tight'>
+                            <div className='flex-1 min-w-0 pr-4'>
+                              <div
+                                className='text-[18px] lg:text-[19px] font-semibold text-white heading mb-0.5 leading-tight truncate'
+                                title={evaluation.name}
+                              >
                                 {evaluation.name}
                               </div>
                               <div className='text-[13px] lg:text-[14px] text-[#9ca3af] text-body leading-tight'>
@@ -404,11 +407,11 @@ const EvaluatorHome = () => {
                             </div>
 
                             {/* Vertical Divider */}
-                            <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4'></div>
+                            <div className='w-px h-12 lg:h-12 bg-[#FFFFFF]/6 mx-3 lg:mx-4 shrink-0'></div>
 
                             {/* Right Side - Score and Tier */}
-                            <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px]'>
-                              <div className='text-base text-white heading leading-none'>
+                            <div className='flex items-center gap-2 min-w-[80px] lg:min-w-[90px] shrink-0'>
+                              <div className='text-base text-white heading leading-none tabular-nums'>
                                 {evaluation.score}
                               </div>
                               <div className='bg-[#FFFFFF]/6 text-[#9ca3af] text-[11px] lg:text-[12px] font-medium px-3 py-1 lg:px-3 lg:py-1 rounded-full text-body border border-[#FFFFFF]/20 whitespace-nowrap'>

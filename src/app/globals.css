@@ -192,7 +192,7 @@ body::-webkit-scrollbar {
   top: 0;
   left: 0;
   width: 1px;
-  height: 240px;
+  height: 160px;
   pointer-events: none;
   visibility: hidden;
 }

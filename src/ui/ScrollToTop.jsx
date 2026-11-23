@@ -31,7 +31,7 @@ const ScrollToTop = ({ scrollContainerRef = null, sentinelRef = null, className 
     const scrollTarget = rootEl || window;
     const checkScroll = () => {
       const y = rootEl ? rootEl.scrollTop : window.scrollY;
-      setIsVisible(y > 240);
+      setIsVisible(y > 160);
     };
 
     checkScroll();

@@ -16,6 +16,7 @@ import {
   getOfficialTotalScore,
   getCategoryScore,
   resolveActiveCategories,
+  normalizeTier,
 } from '@/lib/evaluationUtils';
 
 // In-memory cache across tab switches
@@ -138,7 +139,7 @@ const EvaluationDetailsPage = () => {
       <EvaluatorHeader showBackButton={true} />
 
       <div className='flex-1 bg-[#181818]'>
-        <main className='px-6 py-6 lg:px-8 lg:py-8'>
+        <main className='px-5 py-6 lg:px-8 lg:py-8 pb-20'>
           <div className='max-w-md mx-auto lg:max-w-6xl'>
             {/* Header Info */}
             <div className='mb-6 lg:mb-8'>
@@ -193,10 +194,27 @@ const EvaluationDetailsPage = () => {
                   </p>
                 </div>
 
-                <div className='flex items-center justify-center gap-4 text-[13px] text-[#6b7280] border-t border-[#3a3a3a] pt-3 w-full'>
+                <div className='flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[13px] text-[#9ca3af] border-t border-[#3a3a3a] pt-3 w-full'>
                   <span>Report Date: {evaluation.date || 'N/A'}</span>
                   <span>•</span>
                   <span>Tier: {activeOfficial.tier || evaluation.tier || 'N/A'}</span>
+                  {activeOfficial.suggestedTier && activeOfficial.suggestedTier !== 'N/A' && (() => {
+                    const tierChanged =
+                      normalizeTier(activeOfficial.suggestedTier) !==
+                      normalizeTier(activeOfficial.tier || evaluation.tier);
+                    return (
+                      <span
+                        title={`Recommended: ${activeOfficial.suggestedTier}`}
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${
+                          tierChanged
+                            ? 'bg-sky-500/15 text-sky-300 border-sky-400/30'
+                            : 'bg-white/5 text-[#d1d5db] border-white/15'
+                        }`}
+                      >
+                        {tierChanged ? `→ ${activeOfficial.suggestedTier}` : `Rec: ${activeOfficial.suggestedTier}`}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
